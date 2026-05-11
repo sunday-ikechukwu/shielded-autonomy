@@ -32,6 +32,7 @@ setup(
     entry_points={
         'console_scripts': [
             'metrics_recorder = nav2_classical_planner.metrics_recorder:main',
+            'imitation_data_recorder = nav2_classical_planner.imitation_data_recorder:main',
         ],
     },
 )
