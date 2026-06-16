@@ -23,3 +23,8 @@ cheatsheet.md
 
 *.bag
 *.log
+
+*.hdf5
+imitation_data/
+
+safeDagger_Architecture.md

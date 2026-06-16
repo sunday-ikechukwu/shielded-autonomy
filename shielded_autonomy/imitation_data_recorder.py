@@ -32,7 +32,7 @@ class ImitationDataRecorder(Node):
         super().__init__('imitation_data_recorder')
 
         # Parameters
-        self.declare_parameter('save_directory', os.path.expanduser('~/nav2_ws/src/nav2_classical_planner/imitation_data/'))
+        self.declare_parameter('save_directory', os.path.expanduser('~/nav2_ws/src/shielded_autonomy/imitation_data/'))
         self.declare_parameter('episode_name', 'episode')
         self.declare_parameter('max_steps', 10000)
         self.declare_parameter('scan_range_max', 3.5)  # TurtleBot3 LiDAR max range
@@ -57,7 +57,8 @@ class ImitationDataRecorder(Node):
         self.scans_buffer = []       # what the robot saw (36 rays)
         self.odom_vel_buffer = []    # how fast it was moving
         self.goal_local_buffer = []  # where the goal was relative to robot
-        self.actions_buffer = []     # what DWA commanded
+        self.actions_buffer = []     # what MPPI commanded
+        self.time_buffer = []
         self.step_count = 0
 
         #Qos profile for sensor
@@ -84,7 +85,7 @@ class ImitationDataRecorder(Node):
             10
         )
 
-        self.latest_cmd_vel = None  # stores most recent DWA command
+        self.latest_cmd_vel = None  # stores most recent MPPI command
 
         self.cmd_vel_sub = self.create_subscription(
             Twist,
@@ -107,7 +108,7 @@ class ImitationDataRecorder(Node):
         if not msg.poses:
             return
 
-        self.current_goal = msg.poses[-1] #  # extract last pose from plan — this is always the goal
+        self.current_goal = msg.poses[-1] # extract last pose from plan — this is always the goal
         self.episode_outcome = None
         self.recording = True
         self.get_logger().info('Goal received — recording started.')
@@ -168,17 +169,21 @@ class ImitationDataRecorder(Node):
         if goal_local is None:
             return
         
-        # EXPERT ACTION — what DWA actually commanded
+        # EXPERT ACTION — what MPPI actually commanded
         action = np.array([
             self.latest_cmd_vel.linear.x,
             self.latest_cmd_vel.angular.z
         ], dtype=np.float32)
+
+        # GET CURRENT TIME for timestamping
+        current_time_sec = self.get_clock().now().nanoseconds / 1e9
 
         # APPEND TO BUFFERS
         self.scans_buffer.append(ranges)
         self.odom_vel_buffer.append(odom_vel)
         self.goal_local_buffer.append(goal_local)
         self.actions_buffer.append(action)
+        self.time_buffer.append(current_time_sec)
         self.step_count += 1
 
         if self.step_count % 100 == 0:
@@ -211,15 +216,15 @@ class ImitationDataRecorder(Node):
             # Which direction to turn to FACE the goal right now
             goal_angle = np.arctan2(dy, dx)
 
-            # What heading to have on ARRIVAL (from goal quaternion)
-            _, _, dtheta = euler_from_quaternion([
-                goal_robot_frame.pose.orientation.x,
-                goal_robot_frame.pose.orientation.y,
-                goal_robot_frame.pose.orientation.z,
-                goal_robot_frame.pose.orientation.w,
-            ])  # heading error — how much to rotate to face goal
+            # # What heading to have on ARRIVAL (from goal quaternion)
+            # _, _, dtheta = euler_from_quaternion([
+            #     goal_robot_frame.pose.orientation.x,
+            #     goal_robot_frame.pose.orientation.y,
+            #     goal_robot_frame.pose.orientation.z,
+            #     goal_robot_frame.pose.orientation.w,
+            # ])  # heading error — how much to rotate to face goal , dtheta
 
-            return np.array([goal_distance, goal_angle, dtheta], dtype=np.float32)
+            return np.array([goal_distance, goal_angle], dtype=np.float32)
         
         except TransformException as e:
             self.get_logger().warn(
@@ -239,29 +244,35 @@ class ImitationDataRecorder(Node):
             f.create_dataset('odom_vel',   data=np.array(self.odom_vel_buffer))
             f.create_dataset('goal_local', data=np.array(self.goal_local_buffer))
             f.create_dataset('actions',    data=np.array(self.actions_buffer))
+            
+            #add timestamp to calculate effective polling rate later if needed
+            f.create_dataset('timestamps_sec', data=np.array(self.time_buffer, dtype=np.float64))
 
             # Metadata — outcome flag is the critical one.
-            # Your training script will filter: only load episodes
+            # training script will filter: only load episodes
             # where outcome == 'success' for clean BC training.
             # But all episodes are preserved for future experiments.
-            f.attrs['outcome'] = self.episode_outcome
-            f.attrs['num_steps'] = self.step_count
-            f.attrs['obs_dim'] = '36 (scan) + 2 (odom_vel) + 3 (goal_distance, goal_angle, dtheta) = 41'
-            f.attrs['action_dim'] = '2: [linear_x, angular_z]'
+            f.attrs['episode_name']   =         self.episode_name
+            f.attrs['outcome']        =         self.episode_outcome
+            f.attrs['num_steps']      =         self.step_count
+            f.attrs['obs_dim']        =         '36 (scan) + 2 (odom_vel) + ' \
+                                                '2 (goal_distance, goal_angle) = 40'
+            f.attrs['action_dim']     =         '2: [linear_x, angular_z]'
         
         self.get_logger().info(
             f'Episode saved [{self.episode_outcome}]: {self.step_count} steps → {filename}'
         )
 
         # Reset for next episode
-        self.scans_buffer = []
-        self.odom_vel_buffer = []
-        self.goal_local_buffer = []
-        self.actions_buffer = []
-        self.step_count = 0
-        self.current_goal = None
-        self.episode_outcome = None
-        self.latest_cmd_vel = None
+        self.scans_buffer       =     []
+        self.odom_vel_buffer    =     []
+        self.goal_local_buffer  =     []
+        self.actions_buffer     =     []
+        self.time_buffer        =     []
+        self.step_count         =     0
+        self.current_goal       =     None
+        self.episode_outcome    =     None
+        self.latest_cmd_vel     =     None
 
 def main(args=None):
     rclpy.init(args=args)

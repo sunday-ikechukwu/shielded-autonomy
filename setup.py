@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-package_name = 'nav2_classical_planner'
+package_name = 'shielded_autonomy'
 
 setup(
     name=package_name,
@@ -21,6 +21,7 @@ setup(
         ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
         ('share/' + package_name + '/maps', glob('maps/*')),
         ('share/' + package_name + '/config', glob('config/*')),
+        ('share/' + package_name + '/bc_model', glob('bc_model/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -31,8 +32,13 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'metrics_recorder = nav2_classical_planner.metrics_recorder:main',
-            'imitation_data_recorder = nav2_classical_planner.imitation_data_recorder:main',
+            'metrics_recorder        = shielded_autonomy.metrics_recorder:main',
+            'imitation_data_recorder = shielded_autonomy.imitation_data_recorder:main',
+            'bc_inference_node       = shielded_autonomy.bc_inference_node:main',
+            'bc_vs_mppi_logger       = shielded_autonomy.bc_vs_mppi_logger:main',
+            'safety_monitor_node     = shielded_autonomy.safety_monitor_node:main',
+            'arbitration_node        = shielded_autonomy.arbitration_node:main',
+            'safe_dagger_recorder_node = shielded_autonomy.safe_dagger_recorder_node:main',
         ],
     },
 )

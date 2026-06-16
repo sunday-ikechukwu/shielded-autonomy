@@ -9,6 +9,7 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 import math
 import csv
+import os
 
 
 class MetricsRecorder(Node):
@@ -74,7 +75,7 @@ class MetricsRecorder(Node):
         self.run_count = 0 
 
         #Specify planner name for later comparison with RL planner
-        self.planner_name = "DWB"  # change to RL later
+        self.planner_name = "MPPI"  # change to BC later
 
         self.get_logger().info('Metrics recorder ready')
 
@@ -321,9 +322,11 @@ class MetricsRecorder(Node):
 
     # ---------------- SAVE ----------------
     def save_to_csv(self):
-        filename = 'nav2_metrics.csv'
+        log_path = os.path.expanduser(
+            '~/nav2_ws/src/shielded_autonomy/nav2_metrics.csv'
+        )
 
-        with open(filename, 'w', newline='') as f:
+        with open(log_path, 'w', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=[
                 'planner',
                 'scenario',
@@ -345,7 +348,7 @@ class MetricsRecorder(Node):
             writer.writeheader()
             writer.writerows(self.results)
 
-        self.get_logger().info(f'Saved to {filename}')
+        self.get_logger().info(f'Saved to {log_path}')
 
 
 def main():

@@ -18,7 +18,7 @@ def generate_launch_description():
     y_pose = LaunchConfiguration('y_pose', default='0.0')
 
     world = os.path.join(
-        get_package_share_directory('nav2_classical_planner'),
+        get_package_share_directory('shielded_autonomy'),
         'worlds',
         'research_office_world.sdf'
     )
@@ -51,8 +51,7 @@ def generate_launch_description():
         '-file', '/opt/ros/humble/share/turtlebot3_gazebo/models/turtlebot3_waffle/model.sdf',
         '-x', x_pose,  # <-- use launch argument
         '-y', y_pose,  # <-- use launch argument
-        '-z', '0.01',
-        # '-Y', '2.5'   # ✅ facing Right/South (-Y direction) 1.5708
+        '-z', '0.01'
     ],
     output='screen'
     )
@@ -60,9 +59,8 @@ def generate_launch_description():
     
     ld = LaunchDescription()
 
-    # Add the commands to the launch description
     ld.add_action(gzserver_cmd)
-    ld.add_action(gzclient_cmd)
+    # ld.add_action(gzclient_cmd) # Optional:  Uncomment to launch Gazebo client (GUI)
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(spawn_turtlebot_cmd)
 
