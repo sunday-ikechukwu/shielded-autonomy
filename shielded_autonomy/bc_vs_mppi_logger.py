@@ -20,11 +20,11 @@ class BCvsMPPILogger(Node):
         self.bc_sub = self.create_subscription(
             Twist, '/cmd_vel_bc', self.bc_callback, 10)
         self.mppi_sub = self.create_subscription(
-            Twist, '/cmd_vel', self.mppi_callback, 10)
+            Twist, '/cmd_vel_mppi', self.mppi_callback, 10)
 
         # Log to CSV for analysis
         log_path = os.path.expanduser(
-            '~/nav2_ws/src/shielded_autonomy/bc_vs_mppi_log.csv'
+            '~/nav2_ws/src/shielded_autonomy/safeBc_vs_mppi_log_v2.csv'
         )
         self.csv_file = open(log_path, 'w', newline='')
         self.writer = csv.writer(self.csv_file)

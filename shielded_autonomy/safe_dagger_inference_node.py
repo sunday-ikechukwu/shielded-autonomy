@@ -10,27 +10,24 @@ from action_msgs.msg import GoalStatusArray
 import tf2_ros
 import tf2_geometry_msgs
 from tf2_ros import TransformException
-from tf_transformations import euler_from_quaternion
 
 import numpy as np
 import onnxruntime as ort
 import os
 
-class BCInferenceNode(Node):
+class SafeDaggerInferenceNode(Node):
     def __init__(self):
-        super().__init__('bc_inference_node')
+        super().__init__('safe_dagger_inference_node')
 
         # ── Parameters ────────────────────────────────────────────────────
-        # Paths to model and normalization stats.
         self.declare_parameter('model_path',
-            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/bc_model_1/bc_policy.onnx'))
+            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/dagger_model_v3_new/bc_dagger_1x.onnx'))
         self.declare_parameter('norm_stats_path',
-            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/bc_model_1/bc_norm_stats.npz'))
+            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/dagger_model_v3_new/bc_dagger_1x_norm_stats.npz'))
         self.declare_parameter('scan_range_max', 3.5)
         self.declare_parameter('inference_hz', 10.0)
 
-        # Safety limits — clip network output to physically safe values.
-        # same values as MPPI expert
+        # Safety limits
         self.declare_parameter('max_linear_x',  0.26)
         self.declare_parameter('max_angular_z', 1.9)
 
@@ -56,10 +53,10 @@ class BCInferenceNode(Node):
             raise FileNotFoundError(norm_stats_path)
 
         stats         = np.load(norm_stats_path)
-        self.obs_mean = stats['obs_mean'].astype(np.float32)  # shape (41,)
-        self.obs_std  = stats['obs_std'].astype(np.float32)   # shape (41,)
-        self.act_mean = stats['act_mean'].astype(np.float32)  # shape (2,)
-        self.act_std  = stats['act_std'].astype(np.float32)   # shape (2,)
+        self.obs_mean = stats['obs_mean'].astype(np.float32)  
+        self.obs_std  = stats['obs_std'].astype(np.float32)   
+        self.act_mean = stats['act_mean'].astype(np.float32)  
+        self.act_std  = stats['act_std'].astype(np.float32)   
         self.get_logger().info('Normalization statistics loaded.')
 
         # ── TF2 ───────────────────────────────────────────────────────────
@@ -70,9 +67,9 @@ class BCInferenceNode(Node):
         self.latest_scan     = None
         self.latest_odom_vel = None
         self.current_goal    = None
-
-        # ── Monitor navigation status ─────────────────────────────────────
-        self.navigating = False
+        self.navigating      = False
+        self.tracked_goal_id = None
+        self.current_plan    = []     # Store full plan for debugging/replanning
 
         # ── QoS for sensor topics ─────────────────────────────────────────
         sensor_qos = QoSProfile(
@@ -81,36 +78,26 @@ class BCInferenceNode(Node):
             depth=5
         )
 
-        # ── Subscribers ───────────────────────────────────────────────────
-        self.scan_sub = self.create_subscription(
-            LaserScan, '/scan', self.scan_callback, qos_profile=sensor_qos)
-
-        self.odom_sub = self.create_subscription(
-            Odometry, '/odom', self.odom_callback, qos_profile=sensor_qos)
-
-        self.plan_sub = self.create_subscription(
-            Path, '/plan', self.plan_callback, 10)
-
+        # ── Subscribers & Publishers ──────────────────────────────────────
+        self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, qos_profile=sensor_qos)
+        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, qos_profile=sensor_qos)
+        self.plan_sub = self.create_subscription(Path, '/plan', self.plan_callback, 10)
         self.status_sub = self.create_subscription(GoalStatusArray, '/navigate_to_pose/_action/status', self.status_callback, 10)
-
-        # ── Publisher ─────────────────────────────────────────────────────
+        
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_bc', 10)
 
         # ── Inference timer ───────────────────────────────────────────────
         timer_period = 1.0 / inference_hz
         self.timer = self.create_timer(timer_period, self.inference_loop)
 
-        self.get_logger().info(
-            f'BC Inference Node ready at {inference_hz}Hz. '
-            f'Waiting for plan...'
-        )
+        self.get_logger().info(f'SafeDAgger Inference Node ready at {inference_hz}Hz. Waiting for plan...')
 
     # ── Callbacks  ─────────────────────────────
     def scan_callback(self, msg: LaserScan):
         ranges = np.array(msg.ranges, dtype=np.float32)
         ranges = np.clip(ranges, 0.0, self.scan_range_max)
         ranges = np.nan_to_num(ranges, nan=self.scan_range_max)
-        self.latest_scan = ranges[::10]  # downsmaple 360 → 36
+        self.latest_scan = ranges[::10]  # downsample 360 → 36
 
     def odom_callback(self, msg: Odometry):
         self.latest_odom_vel = np.array([
@@ -119,53 +106,102 @@ class BCInferenceNode(Node):
         ], dtype=np.float32)
 
     def plan_callback(self, msg: Path):
-        # Always update goal
+        """ Dynamically tracks a carrot 1.5m ahead of the robot's REAL-TIME position. """
         if not msg.poses:
             return
-        self.current_goal = msg.poses[-1]
-    
+        
+        # Store full plan for debugging/visualization purposes
+        self.current_plan = msg.poses
+
+        # ── Step 1: Find closest path point to robot ──────────────────
+        try:
+            # Use the path's native frame (usually 'map') instead of hardcoding
+            transform = self.tf_buffer.lookup_transform(
+                msg.header.frame_id, 'base_link',
+                rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=0.0) # 0.0 prevents blocking the callback
+            )
+            robot_x = transform.transform.translation.x
+            robot_y = transform.transform.translation.y
+        except TransformException as e:
+            # If TF not ready, gracefully fall back to the start of the path
+            robot_x = msg.poses[0].pose.position.x
+            robot_y = msg.poses[0].pose.position.y
+
+        min_dist = float('inf')
+        closest_idx = 0
+        for i, pose in enumerate(msg.poses):
+            dx = pose.pose.position.x - robot_x
+            dy = pose.pose.position.y - robot_y
+            dist = np.sqrt(dx**2 + dy**2)
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = i
+
+        # ── Step 2: Walk 1.5m forward from closest point ──────────────
+        target_lookahead = 1.5
+        cumulative_dist  = 0.0
+        carrot_pose      = msg.poses[-1]  # default to final goal if path is short
+
+        for i in range(closest_idx + 1, len(msg.poses)):
+            p1 = msg.poses[i-1].pose.position
+            p2 = msg.poses[i].pose.position
+            cumulative_dist += np.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
+            
+            if cumulative_dist >= target_lookahead:
+                carrot_pose = msg.poses[i]
+                break
+
+        self.current_goal = carrot_pose
+
     def status_callback(self, msg: GoalStatusArray):
         if not msg.status_list:
-            self.navigating = False
             return
-        
+            
+        # If we are not tracking any goal, look for an active one (status 1 = Accepted, 2 = Executing)
+        if self.tracked_goal_id is None:
+            for status_item in msg.status_list:
+                if status_item.status in [1, 2]:
+                    self.tracked_goal_id = tuple(status_item.goal_info.goal_id.uuid)
+                    self.get_logger().info(f"✅ New Nav2 Goal Accepted! Tracking Goal ID: {self.tracked_goal_id}")
+                    self.navigating = True
+                    break
 
-        # Check if ANY goal in the entire history array is currently running (1 = Accepted, 2 = Executing)
-        is_currently_active = any(status_item.status in [1, 2] for status_item in msg.status_list)
+        # If we are tracking a goal, monitor its lifecycle
+        if self.tracked_goal_id is not None:
+            tracked_item = None
+            for status_item in msg.status_list:
+                if tuple(status_item.goal_info.goal_id.uuid) == self.tracked_goal_id:
+                    tracked_item = status_item
+                    break
 
-        if is_currently_active:
-            self.navigating = True
-        else:
-            # If nothing is active, but we were just moving, we must have finished/cancelled!
-            if self.navigating: 
-                self.get_logger().info("Nav2 Goal Canceled, Aborted, or Succeeded. Stopping BC Policy.")
-                self.navigating = False
-                self.current_goal = None
-                
-                # Hard stop the robot
-                stop = Twist()
-                self.cmd_pub.publish(stop)
+            if tracked_item is not None:
+                status_code = tracked_item.status
+                if status_code in [4, 5, 6]:
+                    self.get_logger().info(f"🛑 Tracked Goal Ended (Status: {status_code}). Stopping Robot.")
+                    self.navigating = False
+                    self.current_goal = None
+                    self.current_plan    = []
+                    self.tracked_goal_id = None
+                    
+                    # Hard stop the robot
+                    stop = Twist()
+                    self.cmd_pub.publish(stop)
 
     # ── Inference loop ────────────────────────────────────────────────────
     def inference_loop(self):
         if not self.navigating:
             return
 
-        # Safety gate — don't predict until all data is available.
-        if (self.latest_scan     is None or
-            self.latest_odom_vel is None or
-            self.current_goal    is None):
+        if (self.latest_scan is None or self.latest_odom_vel is None or self.current_goal is None):
             return
 
         # ── Get goal in robot frame ───────────────────────────────────────
-        # Use rclpy.time.Time() for latest available transform
-        # to avoid future extrapolation warning.
         goal_local = self.get_goal_in_robot_frame()
         if goal_local is None:
             return
 
         # ── Build observation vector ──────────────────────────────────────
-        # [36 scan rays | 2 odom_vel | 2 goal_local] = 40 dims
         obs = np.concatenate([
             self.latest_scan,
             self.latest_odom_vel,
@@ -173,31 +209,19 @@ class BCInferenceNode(Node):
         ]).astype(np.float32)
 
         # ── Normalize ─────────────────────────────────────────────────────
-        # Apply same normalization as training.
         obs_norm = (obs - self.obs_mean) / self.obs_std
 
         # ── ONNX inference ────────────────────────────────────────────────
-        # Reshape to (1, 40) — ONNX expects a batch dimension.
         input_tensor = obs_norm.reshape(1, -1)
-        ort_outputs  = self.ort_session.run(
-            None, {self.input_name: input_tensor}
-        )
+        ort_outputs  = self.ort_session.run(None, {self.input_name: input_tensor})
 
         # ── Denormalize output ────────────────────────────────────────────
-        # Reverse normalization to get real cmd_vel values.
-        action_norm = ort_outputs[0][0]  # shape (2,)
+        action_norm = ort_outputs[0][0]  
         action = (action_norm * self.act_std) + self.act_mean
 
         # ── Safety clipping ───────────────────────────────────────────────
-        # Clip to physical limits of TurtleBot3.
-        # Protects against out-of-distribution observations causing
-        # extreme network outputs that could damage the robot.
-        linear_x  = float(np.clip(action[0],
-                                  -self.max_linear_x,
-                                   self.max_linear_x))
-        angular_z = float(np.clip(action[1],
-                                  -self.max_angular_z,
-                                   self.max_angular_z))
+        linear_x  = float(np.clip(action[0], -self.max_linear_x, self.max_linear_x))
+        angular_z = float(np.clip(action[1], -self.max_angular_z, self.max_angular_z))
 
         # ── Publish ───────────────────────────────────────────────────────
         twist = Twist()
@@ -221,27 +245,24 @@ class BCInferenceNode(Node):
             dy = goal_robot_frame.pose.position.y
 
             goal_distance = np.sqrt(dx**2 + dy**2)
-            goal_angle    = np.arctan2(dy, dx)
+            # goal_angle    = np.arctan2(dy, dx)
 
-            # _, _, dtheta = euler_from_quaternion([
-            #     goal_robot_frame.pose.orientation.x,
-            #     goal_robot_frame.pose.orientation.y,
-            #     goal_robot_frame.pose.orientation.z,
-            #     goal_robot_frame.pose.orientation.w,
-            # ]) , dtheta
+            # Deadband guard: if we are very close to the goal, clamp angle to 0
+            # to prevent origin mathematical singularity and angular oscillations.
+            if goal_distance < 0.15:
+                goal_angle = 0.0
+            else:
+                goal_angle = np.arctan2(dy, dx)
 
-            return np.array([goal_distance, goal_angle],
-                            dtype=np.float32)
+            return np.array([goal_distance, goal_angle], dtype=np.float32)
 
         except TransformException as e:
-            self.get_logger().warn(
-                f'TF not ready: {e}', throttle_duration_sec=2.0)
+            self.get_logger().warn(f'TF not ready: {e}', throttle_duration_sec=2.0)
             return None
-
 
 def main(args=None):
     rclpy.init(args=args)
-    node = BCInferenceNode()
+    node = SafeDaggerInferenceNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -251,7 +272,6 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()

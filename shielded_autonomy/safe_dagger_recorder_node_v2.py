@@ -17,12 +17,12 @@ from datetime import datetime
 import os
 from collections import deque
 
-class SafeDaggerRecorderNode(Node):
+class SafeDaggerRecorderNodeV2(Node):
     def __init__(self):
-        super().__init__('safe_dagger_recorder_node')
+        super().__init__('safe_dagger_recorder_node_v2')
 
         # --- Parameters ---
-        self.declare_parameter('save_directory', os.path.expanduser('~/nav2_ws/src/shielded_autonomy/imitation_data/dagger_data/'))
+        self.declare_parameter('save_directory', os.path.expanduser('~/nav2_ws/src/shielded_autonomy/imitation_data/dagger_data_v2_ite2/'))
         self.declare_parameter('scan_range_max', 3.5)
 
         self.save_directory = self.get_parameter('save_directory').value
@@ -33,7 +33,9 @@ class SafeDaggerRecorderNode(Node):
 
         # --- State Variables ---
         self.current_goal = None
+        self.current_plan    = []
         self.recording_active = False
+        self.tracked_goal_id = None
         self.current_mode = "BC_POLICY"
         self.latest_trigger_reason = "UNKNOWN"
 
@@ -44,7 +46,7 @@ class SafeDaggerRecorderNode(Node):
         self.actions_buffer = []
         self.time_buffer = []
         self.step_count = 0
-       
+        
 
         # --- The Pre-Trigger Memory Buffer (~1 second of context) ---
         self.pretrigger_buffer = deque(maxlen=10)
@@ -89,16 +91,97 @@ class SafeDaggerRecorderNode(Node):
         }
 
     def plan_callback(self, msg: Path):
-        if self.recording_active:
-            return
+        """ Dynamically tracks a carrot 1.5m ahead of the robot's REAL-TIME position. """
         if not msg.poses:
             return
 
-        self.current_goal = msg.poses[-1]
-        self.recording_active = True
+        # Store full plan for debugging/visualization purposes
+        self.current_plan = msg.poses
+
+        # ── Step 1: Find closest path point to robot ──────────────────
+        try:
+            # Use the path's native frame (usually 'map') instead of hardcoding
+            transform = self.tf_buffer.lookup_transform(
+                msg.header.frame_id, 'base_link',
+                rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=0.0) # 0.0 prevents blocking the callback
+            )
+            robot_x = transform.transform.translation.x
+            robot_y = transform.transform.translation.y
+        except TransformException as e:
+            # If TF not ready, gracefully fall back to the start of the path
+            robot_x = msg.poses[0].pose.position.x
+            robot_y = msg.poses[0].pose.position.y
+
+        min_dist = float('inf')
+        closest_idx = 0
+        for i, pose in enumerate(msg.poses):
+            dx = pose.pose.position.x - robot_x
+            dy = pose.pose.position.y - robot_y
+            dist = np.sqrt(dx**2 + dy**2)
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = i
+
+        # ── Step 2: Walk 1.5m forward from closest point ──────────────
+        target_lookahead = 1.5
+        cumulative_dist  = 0.0
+        carrot_pose      = msg.poses[-1]  # default to final goal if path is short
+
+        for i in range(closest_idx + 1, len(msg.poses)):
+            p1 = msg.poses[i-1].pose.position
+            p2 = msg.poses[i].pose.position
+            cumulative_dist += np.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
+            
+            if cumulative_dist >= target_lookahead:
+                carrot_pose = msg.poses[i]
+                break
+
+        self.current_goal = carrot_pose
+
+    def status_callback(self, msg: GoalStatusArray):
+        """
+        LIFECYCLE NODE: Strictly manages UUIDs and Recording States.
+        """
+        if not msg.status_list:
+            return
         
-        self.reset_buffers()
-        self.get_logger().info('New Nav2 plan detected. Active and monitoring for expert interventions...')
+
+        # ── 1. START NEW EPISODE ──
+        if self.tracked_goal_id is None:
+            for status_item in msg.status_list:
+                if status_item.status in [1, 2]: # Accepted or Executing
+                    self.tracked_goal_id = tuple(status_item.goal_info.goal_id.uuid)
+                    self.get_logger().info(f"✅ New Nav2 Goal Accepted! Tracking Goal ID: {self.tracked_goal_id}")
+                    
+                    self.reset_buffers()
+                    self.recording_active = True
+                    break
+
+        # ── 2. MONITOR THE TRACKED GOAL ──
+        if self.tracked_goal_id is not None:
+            tracked_item = None
+            for status_item in msg.status_list:
+                if tuple(status_item.goal_info.goal_id.uuid) == self.tracked_goal_id:
+                    tracked_item = status_item
+                    break
+
+            if tracked_item is not None:
+                status_code = tracked_item.status
+                
+                # 4 = Succeeded, 5 = Canceled, 6 = Aborted
+                if status_code in [4, 5, 6]:
+                    self.get_logger().info(f"🛑 Tracked Goal Ended (Status: {status_code}). Closing active tracking.")
+                    
+                    # If the expert was in the middle of a recovery when the goal ended, save it!
+                    if self.current_mode == "EXPERT" and self.step_count > 0:
+                        self.save_recovery_chunk()
+                        
+                    self.recording_active = False
+                    self.current_goal = None
+                    self.current_plan = []
+                    self.tracked_goal_id = None
+                    self.current_mode = "BC_POLICY"
 
     def mode_callback(self, msg: String):
         new_mode = msg.data
@@ -166,24 +249,28 @@ class SafeDaggerRecorderNode(Node):
 
     def get_goal_in_robot_frame(self):
         try:
-            transform = self.tf_buffer.lookup_transform('base_link', self.current_goal.header.frame_id, rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=0.1))
-            goal_robot = tf2_geometry_msgs.do_transform_pose_stamped(self.current_goal, transform)
+            transform = self.tf_buffer.lookup_transform(
+                'base_link', 
+                self.current_goal.header.frame_id, 
+                rclpy.time.Time(), 
+                timeout=rclpy.duration.Duration(seconds=0.1)
+            )
+            goal_robot = tf2_geometry_msgs.do_transform_pose_stamped(
+                self.current_goal, transform
+            )
             dx, dy = goal_robot.pose.position.x, goal_robot.pose.position.y
-            return np.array([np.sqrt(dx**2 + dy**2), np.arctan2(dy, dx)], dtype=np.float32)
+
+            goal_distance =  np.sqrt(dx**2 + dy**2)
+
+            # Deadband guard: if we are very close to the goal, clamp angle to 0
+            # to prevent origin mathematical singularity and angular oscillations.
+            if goal_distance < 0.15:
+                goal_angle = 0.0
+            else:
+                goal_angle = np.arctan2(dy, dx)
+            return np.array([goal_distance, goal_angle], dtype=np.float32)
         except TransformException:
             return None
-
-    def status_callback(self, msg: GoalStatusArray):
-        if not self.recording_active or not msg.status_list:
-            return
-
-        latest_status_code = msg.status_list[-1].status
-        if latest_status_code in [4, 5, 6]:
-            self.get_logger().info(f'Nav2 navigation lifecycle ended (Status: {latest_status_code}). Closing active tracking.')
-            if self.step_count > 0:
-                self.save_recovery_chunk()
-            self.recording_active = False
-            self.current_goal = None
 
     def save_recovery_chunk(self):
         if self.step_count == 0:
@@ -230,10 +317,11 @@ class SafeDaggerRecorderNode(Node):
         self.pretrigger_buffer.clear()
         self.step_count = 0
         self.latest_trigger_reason = "UNKNOWN"
+        
 
 def main(args=None):
     rclpy.init(args=args)
-    node = SafeDaggerRecorderNode()
+    node = SafeDaggerRecorderNodeV2()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -246,4 +334,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-

@@ -1,6 +1,7 @@
 """
-imitation_data_recorder.py
-Records (observation, action) pairs with DWA as the expert policy.
+imitation_data_recorder_v2.py
+Records (observation, action) pairs with DWA/MPPI as the expert policy.
+Uses Local Carrot (~1.5m) and UUID state-machine tracking.
 Saves to HDF5 for offline behavior cloning training.
 """
 
@@ -14,7 +15,7 @@ from action_msgs.msg import GoalStatusArray
 
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 import message_filters
-from message_filters  import ApproximateTimeSynchronizer
+from message_filters import ApproximateTimeSynchronizer
 
 import tf2_ros
 import tf2_geometry_msgs
@@ -27,12 +28,12 @@ import h5py
 from datetime import datetime
 import os
 
-class ImitationDataRecorder(Node):
+class ImitationDataRecorderV2(Node):
     def __init__(self):
-        super().__init__('imitation_data_recorder')
+        super().__init__('imitation_data_recorder_v2')
 
         # Parameters
-        self.declare_parameter('save_directory', os.path.expanduser('~/nav2_ws/src/shielded_autonomy/imitation_data/'))
+        self.declare_parameter('save_directory', os.path.expanduser('~/nav2_ws/src/shielded_autonomy/imitation_data/MPPI_expert_data_v2/'))
         self.declare_parameter('episode_name', 'episode')
         self.declare_parameter('max_steps', 10000)
         self.declare_parameter('scan_range_max', 3.5)  # TurtleBot3 LiDAR max range
@@ -45,23 +46,21 @@ class ImitationDataRecorder(Node):
         # Create save directory if it doesn't exist
         os.makedirs(self.save_directory, exist_ok=True)
 
+        # State Machine Variables
         self.current_goal = None
+        self.current_plan = []
         self.recording = False
+        self.tracked_goal_id = None
         self.episode_outcome = None
 
         # TF buffer and listener
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        # buffers for synchronized messages
-        self.scans_buffer = []       # what the robot saw (36 rays)
-        self.odom_vel_buffer = []    # how fast it was moving
-        self.goal_local_buffer = []  # where the goal was relative to robot
-        self.actions_buffer = []     # what MPPI commanded
-        self.time_buffer = []
-        self.step_count = 0
+        # Initialize data buffers
+        self.reset_buffers()
 
-        #Qos profile for sensor
+        # QoS profile for sensor
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
@@ -73,79 +72,136 @@ class ImitationDataRecorder(Node):
         odom_sub = message_filters.Subscriber(
             self, Odometry, '/odom', qos_profile=sensor_qos)
 
-
         self.sync = ApproximateTimeSynchronizer(
             [scan_sub, odom_sub], queue_size=10, slop=0.1)
         self.sync.registerCallback(self.sync_callback)
 
-        self.plan_sub = self.create_subscription(
-            Path,
-            '/plan',
-            self.plan_callback,
-            10
-        )
+        self.plan_sub = self.create_subscription(Path, '/plan', self.plan_callback, 10)
+        
+        self.cmd_vel_sub = self.create_subscription(Twist, '/cmd_vel', self.cmd_vel_callback, 10)
 
-        self.latest_cmd_vel = None  # stores most recent MPPI command
-
-        self.cmd_vel_sub = self.create_subscription(
-            Twist,
-            '/cmd_vel',
-            self.cmd_vel_callback,
-            10
-        )
-
-        #status subscriber to detect episode outcomes
+        # Status subscriber to detect episode outcomes
         self.status_sub = self.create_subscription(GoalStatusArray, '/navigate_to_pose/_action/status', self.status_callback, 10)
 
-        self.get_logger().info('Imitation Data Recorder node ready. Send a goal in RViz to start recording.')
+        self.get_logger().info('V2 Imitation Data Recorder node ready. Send a goal in RViz to start recording.')
 
-    
+    def reset_buffers(self):
+        """Clears all data arrays for a fresh recording session."""
+        self.scans_buffer       = []
+        self.odom_vel_buffer    = []
+        self.goal_local_buffer  = []
+        self.actions_buffer     = []
+        self.time_buffer        = []
+        self.step_count         = 0
+        self.latest_cmd_vel     = None
+
     def plan_callback(self, msg: Path):
-        if self.recording:
-            return
-        
-        # extract only the pose
+        """ Dynamically tracks a carrot 1.5m ahead of the robot's REAL-TIME position. """
         if not msg.poses:
             return
 
-        self.current_goal = msg.poses[-1] # extract last pose from plan — this is always the goal
-        self.episode_outcome = None
-        self.recording = True
-        self.get_logger().info('Goal received — recording started.')
+        self.current_plan = msg.poses
+
+        # ── Step 1: Find closest path point to robot ──────────────────
+        try:
+            # Use the path's native frame (usually 'map') instead of hardcoding
+            transform = self.tf_buffer.lookup_transform(
+                msg.header.frame_id, 'base_link',
+                rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=0.0) # 0.0 prevents blocking the callback
+            )
+            robot_x = transform.transform.translation.x
+            robot_y = transform.transform.translation.y
+        except TransformException as e:
+            # If TF not ready, gracefully fall back to the start of the path
+            robot_x = msg.poses[0].pose.position.x
+            robot_y = msg.poses[0].pose.position.y
+
+        min_dist = float('inf')
+        closest_idx = 0
+        for i, pose in enumerate(msg.poses):
+            dx = pose.pose.position.x - robot_x
+            dy = pose.pose.position.y - robot_y
+            dist = np.sqrt(dx**2 + dy**2)
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = i
+
+        # ── Step 2: Walk 1.5m forward from closest point ──────────────
+        target_lookahead = 1.5
+        cumulative_dist  = 0.0
+        carrot_pose      = msg.poses[-1]  # default to final goal if path is short
+
+        for i in range(closest_idx + 1, len(msg.poses)):
+            p1 = msg.poses[i-1].pose.position
+            p2 = msg.poses[i].pose.position
+            cumulative_dist += np.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
+            
+            if cumulative_dist >= target_lookahead:
+                carrot_pose = msg.poses[i]
+                break
+
+        self.current_goal = carrot_pose
     
     def status_callback(self, msg: GoalStatusArray):
-        # only act only if we're currently recording an episode
-        if not self.recording or self.step_count == 0:
-            return  
-        
+        """
+        LIFECYCLE NODE: Strictly manages UUIDs and Recording States.
+        Never does geometric math.
+        """
         if not msg.status_list:
             return
 
-        latest_status_code = msg.status_list[-1].status
-        if latest_status_code not in [4, 5, 6]:
-            return
+        # ── 1. START NEW EPISODE ──
+        if self.tracked_goal_id is None:
+            for status_item in msg.status_list:
+                if status_item.status in [1, 2]:  # Accepted or Executing
+                    self.tracked_goal_id = tuple(status_item.goal_info.goal_id.uuid)
+                    self.get_logger().info(f"✅ New Goal UUID Accepted: {self.tracked_goal_id}. Starting Recording.")
+                    
+                    self.reset_buffers()
+                    self.episode_outcome = None
+                    self.recording = True
+                    break
 
-        # STATUS_SUCCEEDED = 4 → robot reached the goal
-        if latest_status_code ==4:
-            self.get_logger().info('Nav2 reports goal succeeded — saving episode.')
-            self.episode_outcome = 'success'
-            self.save_episode()
-        # STATUS_CANCELED = 5 → goal canceled/preempted
-        elif latest_status_code == 5:
-            self.get_logger().info('Nav2 reports goal aborted — saving episode.')
-            self.episode_outcome = 'canceled'
-            self.save_episode()
-        # STATUS_ABORTED = 6 → planner/controller failed
-        elif latest_status_code == 6:
-            self.get_logger().info('Nav2 reports goal canceled (preempted) — saving episode.')
-            self.episode_outcome = 'aborted'
-            self.save_episode()
+        # ── 2. MONITOR ACTIVE EPISODE ──
+        if self.tracked_goal_id is not None:
+            tracked_item = None
+            for status_item in msg.status_list:
+                if tuple(status_item.goal_info.goal_id.uuid) == self.tracked_goal_id:
+                    tracked_item = status_item
+                    break
+
+            if tracked_item is not None:
+                status_code = tracked_item.status
+                
+                # 4 = Succeeded, 5 = Canceled, 6 = Aborted
+                if status_code in [4, 5, 6]:
+                    self.get_logger().info(f"🛑 Goal Ended (Status: {status_code}). Handling outcome...")
+                    
+                    if self.step_count > 0:
+                        if status_code == 4:
+                            self.episode_outcome = 'success'
+                        elif status_code == 5:
+                            self.episode_outcome = 'canceled'
+                        elif status_code == 6:
+                            self.episode_outcome = 'aborted'
+                            
+                        self.save_episode()
+                    else:
+                        self.get_logger().info('Discarding empty episode (0 steps).')
+                    
+                    # ── RESET STATE MACHINE ──
+                    self.recording = False
+                    self.current_goal = None
+                    self.current_plan = []
+                    self.episode_outcome = None
+                    self.tracked_goal_id = None
         
     def cmd_vel_callback(self, msg: Twist):
         self.latest_cmd_vel = msg
 
     def sync_callback(self, scan: LaserScan, odom: Odometry):
-        # don't record if no goal has been sent yet.
+        # don't record if state machine is off or carrot isn't ready
         if not self.recording or self.current_goal is None:
             return
         
@@ -194,6 +250,12 @@ class ImitationDataRecorder(Node):
             self.get_logger().warn('Max steps reached — force saving.')
             self.episode_outcome = 'max_steps'
             self.save_episode()
+            
+            # Reset state machine manually since Action Server didn't finish it
+            self.recording = False
+            self.current_goal = None
+            self.episode_outcome = None
+            self.tracked_goal_id = None
         
     def get_goal_in_robot_frame(self, timestamp):
         try:
@@ -213,16 +275,14 @@ class ImitationDataRecorder(Node):
             # How far is the goal
             goal_distance = np.sqrt(dx**2 + dy**2)
 
-            # Which direction to turn to FACE the goal right now
-            goal_angle = np.arctan2(dy, dx)
-
-            # # What heading to have on ARRIVAL (from goal quaternion)
-            # _, _, dtheta = euler_from_quaternion([
-            #     goal_robot_frame.pose.orientation.x,
-            #     goal_robot_frame.pose.orientation.y,
-            #     goal_robot_frame.pose.orientation.z,
-            #     goal_robot_frame.pose.orientation.w,
-            # ])  # heading error — how much to rotate to face goal , dtheta
+            # # Which direction to turn to FACE the goal right now
+            # goal_angle = np.arctan2(dy, dx)
+            # Deadband guard: if we are very close to the goal, clamp angle to 0
+            # to prevent origin mathematical singularity and angular oscillations.
+            if goal_distance < 0.15:
+                goal_angle = 0.0
+            else:
+                goal_angle = np.arctan2(dy, dx)
 
             return np.array([goal_distance, goal_angle], dtype=np.float32)
         
@@ -245,13 +305,10 @@ class ImitationDataRecorder(Node):
             f.create_dataset('goal_local', data=np.array(self.goal_local_buffer))
             f.create_dataset('actions',    data=np.array(self.actions_buffer))
             
-            #add timestamp to calculate effective polling rate later if needed
+            # add timestamp to calculate effective polling rate later if needed
             f.create_dataset('timestamps_sec', data=np.array(self.time_buffer, dtype=np.float64))
 
             # Metadata — outcome flag is the critical one.
-            # training script will filter: only load episodes
-            # where outcome == 'success' for clean BC training.
-            # But all episodes are preserved for future experiments.
             f.attrs['episode_name']   =         self.episode_name
             f.attrs['outcome']        =         self.episode_outcome
             f.attrs['num_steps']      =         self.step_count
@@ -263,20 +320,13 @@ class ImitationDataRecorder(Node):
             f'Episode saved [{self.episode_outcome}]: {self.step_count} steps → {filename}'
         )
 
-        # Reset for next episode
-        self.scans_buffer       =     []
-        self.odom_vel_buffer    =     []
-        self.goal_local_buffer  =     []
-        self.actions_buffer     =     []
-        self.time_buffer        =     []
-        self.step_count         =     0
-        self.current_goal       =     None
-        self.episode_outcome    =     None
-        self.latest_cmd_vel     =     None
+        # Clear RAM 
+        self.reset_buffers()
+
 
 def main(args=None):
     rclpy.init(args=args)
-    node = ImitationDataRecorder()
+    node = ImitationDataRecorderV2()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
