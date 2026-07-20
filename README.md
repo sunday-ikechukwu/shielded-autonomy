@@ -30,8 +30,8 @@ When the learned policy approaches unsafe or unfamiliar states, control is trans
 Design a safe imitation learning pipeline that reduces collision rates by shielding learned policies from catastrophic out-of-distribution failures while allowing continuous adaptation through expert intervention.
 
 **Manuscript in preparation:**  
-**Ikechukwu S., Sawyerr B.A.**  
-*Shielded DAgger: A Deterministic Fallback Architecture for Safe Imitation Learning in Robotics* (Under Review)
+**Ikechukwu S.**  
+*"Runtime Shared Autonomy for Safe Leanring-Based Navigation"* (Under Review)
 
 ---
 
