@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 runtime_metrics_node.py
 
@@ -173,9 +172,9 @@ class RuntimeMetricsNode(Node):
                         'end_time': self.last_navigation_time,
                         'has_failed': False
                     })
-                    self.get_logger().info("⏳ Starting 2-second stability window for this recovery...")
+                    self.get_logger().info("Starting 2-second stability window for this recovery...")
                 else:
-                    self.get_logger().warn("💥 Collision occurred during expert takeover. Ineligible for recovery count.")
+                    self.get_logger().warn("Collision occurred during expert takeover. Ineligible for recovery count.")
 
                 self.intervention_start_nav_time = None
 
@@ -209,7 +208,7 @@ class RuntimeMetricsNode(Node):
                     pending['has_failed'] = True
                 self.pending_recoveries.clear()
                 
-                self.get_logger().warn(f"💥 Collision event registered! Distance: {min_dist:.3f}m")
+                self.get_logger().warn(f"Collision event registered! Distance: {min_dist:.3f}m")
         else:
             self.in_collision = False
 
@@ -219,7 +218,7 @@ class RuntimeMetricsNode(Node):
                 self.near_miss_count += 1
                 self.in_near_miss = True
                 self.get_logger().info(
-                    f"⚠️ Near-miss event registered! Distance: {min_dist:.3f}m "
+                    f"Near-miss event registered! Distance: {min_dist:.3f}m "
                     f"(Total Near-misses: {self.near_miss_count})"
                 )
         elif min_dist > self.NEAR_MISS_THRESHOLD + self.NEAR_MISS_HYSTERESIS:
@@ -279,7 +278,7 @@ class RuntimeMetricsNode(Node):
                     self.last_progress_time = 0.0
                     self.last_navigation_time = 0.0
                     self.previous_progress_pose = None
-                    self.get_logger().info(f"🎯 Tracking Nav2 Goal ID: {self.tracked_goal_id}")
+                    self.get_logger().info(f"Tracking Nav2 Goal ID: {self.tracked_goal_id}")
                     break
 
         if self.tracked_goal_id is not None:
@@ -310,7 +309,7 @@ class RuntimeMetricsNode(Node):
             elapsed_stability = self.last_navigation_time - pending['end_time']
             if elapsed_stability >= 2.0:
                 self.successful_recoveries += 1
-                self.get_logger().info(f"✅ Stability window passed! Successful recovery: {self.successful_recoveries}")
+                self.get_logger().info(f"Stability window passed! Successful recovery: {self.successful_recoveries}")
             else:
                 active_pending.append(pending)
         self.pending_recoveries = active_pending
@@ -319,7 +318,7 @@ class RuntimeMetricsNode(Node):
         stuck_duration = self.last_navigation_time - self.last_progress_time
         if stuck_duration > self.STUCK_TIMEOUT_LIMIT:
             self.get_logger().warn(
-                f"⏱️ Stuck timeout reached! Robot hasn't made progress for {stuck_duration:.1f}s "
+                f"Stuck timeout reached! Robot hasn't made progress for {stuck_duration:.1f}s "
                 f"(Limit: {self.STUCK_TIMEOUT_LIMIT}s)"
             )
             self.stop_and_save("timeout")
@@ -337,7 +336,7 @@ class RuntimeMetricsNode(Node):
         now = self.get_clock().now()
         elapsed_time = (now - self.mission_start_time).nanoseconds / 1e9
         if elapsed_time > self.ABSOLUTE_TIMEOUT_LIMIT * 3:
-            self.get_logger().warn(f"⏱️ Mission timeout reached via fallback elapsed clock ({elapsed_time:.1f}s > {self.ABSOLUTE_TIMEOUT_LIMIT * 3}s)")
+            self.get_logger().warn(f"Mission timeout reached via fallback elapsed clock ({elapsed_time:.1f}s > {self.ABSOLUTE_TIMEOUT_LIMIT * 3}s)")
             self.stop_and_save("timeout")
 
     def stop_and_save(self, result_type):
@@ -382,7 +381,7 @@ class RuntimeMetricsNode(Node):
         # Log a warning if expert control time exceeds navigation time
         if self.total_expert_control_time > navigation_time:
             self.get_logger().warn(
-                f"⚠️ Expert control time ({self.total_expert_control_time:.2f}s) "
+                f"Expert control time ({self.total_expert_control_time:.2f}s) "
                 f"exceeds navigation time ({navigation_time:.2f}s)."
             )
 
@@ -434,9 +433,9 @@ class RuntimeMetricsNode(Node):
                     writer.writeheader()
                 writer.writerow(row)
                 f.flush()
-            self.get_logger().info(f"📝 Saved runtime metrics to: {csv_filepath}")
+            self.get_logger().info(f"Saved runtime metrics to: {csv_filepath}")
         except Exception as e:
-            self.get_logger().error(f"❌ Failed to write to CSV file {csv_filepath}: {str(e)}")
+            self.get_logger().error(f"Failed to write to CSV file {csv_filepath}: {str(e)}")
 
         # Shut down the node gracefully
         self.get_logger().info("Gracefully shutting down runtime_metrics_node...")

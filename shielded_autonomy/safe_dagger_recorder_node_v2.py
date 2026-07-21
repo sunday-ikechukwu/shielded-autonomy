@@ -152,7 +152,7 @@ class SafeDaggerRecorderNodeV2(Node):
             for status_item in msg.status_list:
                 if status_item.status in [1, 2]: # Accepted or Executing
                     self.tracked_goal_id = tuple(status_item.goal_info.goal_id.uuid)
-                    self.get_logger().info(f"✅ New Nav2 Goal Accepted! Tracking Goal ID: {self.tracked_goal_id}")
+                    self.get_logger().info(f"New Nav2 Goal Accepted! Tracking Goal ID: {self.tracked_goal_id}")
                     
                     self.reset_buffers()
                     self.recording_active = True
@@ -171,7 +171,7 @@ class SafeDaggerRecorderNodeV2(Node):
                 
                 # 4 = Succeeded, 5 = Canceled, 6 = Aborted
                 if status_code in [4, 5, 6]:
-                    self.get_logger().info(f"🛑 Tracked Goal Ended (Status: {status_code}). Closing active tracking.")
+                    self.get_logger().info(f"Tracked Goal Ended (Status: {status_code}). Closing active tracking.")
                     
                     # If the expert was in the middle of a recovery when the goal ended, save it!
                     if self.current_mode == "EXPERT" and self.step_count > 0:

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 policy_metrics_node.py
 
@@ -127,7 +126,7 @@ class PolicyMetricsNode(Node):
                 self.collision_count += 1
                 self.in_collision = True
                 self.get_logger().warn(
-                    f"💥 Collision event registered! Distance: {min_dist:.3f}m < {self.COLLISION_THRESHOLD}m "
+                    f"Collision event registered! Distance: {min_dist:.3f}m < {self.COLLISION_THRESHOLD}m "
                     f"(Total Collisions: {self.collision_count})"
                 )
         else:
@@ -139,7 +138,7 @@ class PolicyMetricsNode(Node):
                 self.near_miss_count += 1
                 self.in_near_miss = True
                 self.get_logger().info(
-                    f"⚠️ Near-miss event registered! Distance: {min_dist:.3f}m "
+                    f"Near-miss event registered! Distance: {min_dist:.3f}m "
                     f"(Total Near-misses: {self.near_miss_count})"
                 )
         elif min_dist > self.NEAR_MISS_THRESHOLD + self.NEAR_MISS_HYSTERESIS:
@@ -205,7 +204,7 @@ class PolicyMetricsNode(Node):
             planned_length += math.sqrt(dx**2 + dy**2)
 
         self.planned_path_length = planned_length
-        self.get_logger().info(f"📋 First global plan received: {len(msg.poses)} poses, length = {planned_length:.2f}m")
+        self.get_logger().info(f"First global plan received: {len(msg.poses)} poses, length = {planned_length:.2f}m")
 
     def status_callback(self, msg: GoalStatusArray):
         if not msg.status_list or not self.recording_active:
@@ -220,7 +219,7 @@ class PolicyMetricsNode(Node):
                     self.last_progress_time = 0.0
                     self.last_navigation_time = 0.0
                     self.previous_progress_pose = None
-                    self.get_logger().info(f"🎯 Tracking Nav2 Goal ID: {self.tracked_goal_id}")
+                    self.get_logger().info(f"Tracking Nav2 Goal ID: {self.tracked_goal_id}")
                     break
 
         if self.tracked_goal_id is not None:
@@ -233,7 +232,7 @@ class PolicyMetricsNode(Node):
             if tracked_item is not None:
                 status_code = tracked_item.status
                 if status_code in [4, 5, 6]:
-                    self.get_logger().info(f"🏁 Goal status ended with code: {status_code}")
+                    self.get_logger().info(f"Goal status ended with code: {status_code}")
                     if status_code == 4:
                         self.stop_and_save("success")
                     else:
@@ -247,7 +246,7 @@ class PolicyMetricsNode(Node):
         stuck_duration = self.last_navigation_time - self.last_progress_time
         if stuck_duration > self.STUCK_TIMEOUT_LIMIT:
             self.get_logger().warn(
-                f"⏱️ Stuck timeout reached! Robot hasn't made progress for {stuck_duration:.1f}s "
+                f"Stuck timeout reached! Robot hasn't made progress for {stuck_duration:.1f}s "
                 f"(Limit: {self.STUCK_TIMEOUT_LIMIT}s)"
             )
             self.stop_and_save("timeout")
@@ -256,7 +255,7 @@ class PolicyMetricsNode(Node):
         # 2. Absolute timeout check
         if self.last_navigation_time > self.ABSOLUTE_TIMEOUT_LIMIT:
             self.get_logger().warn(
-                f"⏱️ Absolute simulation timeout reached ({self.last_navigation_time:.1f}s > {self.ABSOLUTE_TIMEOUT_LIMIT}s)"
+                f"Absolute simulation timeout reached ({self.last_navigation_time:.1f}s > {self.ABSOLUTE_TIMEOUT_LIMIT}s)"
             )
             self.stop_and_save("timeout")
             return
@@ -265,7 +264,7 @@ class PolicyMetricsNode(Node):
         current_time = self.get_clock().now()
         elapsed_time = (current_time - self.mission_start_time).nanoseconds / 1e9
         if elapsed_time > self.ABSOLUTE_TIMEOUT_LIMIT * 3:
-            self.get_logger().warn(f"⏱️ Mission timeout reached via fallback elapsed clock ({elapsed_time:.1f}s > {self.ABSOLUTE_TIMEOUT_LIMIT * 3}s)")
+            self.get_logger().warn(f"Mission timeout reached via fallback elapsed clock ({elapsed_time:.1f}s > {self.ABSOLUTE_TIMEOUT_LIMIT * 3}s)")
             self.stop_and_save("timeout")
 
     def stop_and_save(self, result_type):
@@ -340,7 +339,7 @@ class PolicyMetricsNode(Node):
                     writer.writeheader()
                 writer.writerow(row)
                 f.flush()
-            self.get_logger().info(f"📝 Saved experiment metrics to: {csv_filepath}")
+            self.get_logger().info(f"Saved experiment metrics to: {csv_filepath}")
         except Exception as e:
             self.get_logger().error(f"❌ Failed to write to CSV file {csv_filepath}: {str(e)}")
 
