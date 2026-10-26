@@ -21,9 +21,9 @@ class SafeDaggerInferenceNode(Node):
 
         # ── Parameters ────────────────────────────────────────────────────
         self.declare_parameter('model_path',
-            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/dagger_model_v3_new2/bc_dagger_1x.onnx'))
+            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/dagger_model_v2/bc_dagger_1x.onnx'))
         self.declare_parameter('norm_stats_path',
-            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/dagger_model_v3_new2/bc_dagger_3x_norm_stats.npz'))
+            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/dagger_model_v2/bc_dagger_1x_norm_stats.npz'))
         self.declare_parameter('scan_range_max', 3.5)
         self.declare_parameter('inference_hz', 10.0)
 
@@ -124,7 +124,6 @@ class SafeDaggerInferenceNode(Node):
             robot_x = transform.transform.translation.x
             robot_y = transform.transform.translation.y
         except TransformException as e:
-            # If TF not ready, gracefully fall back to the start of the path
             robot_x = msg.poses[0].pose.position.x
             robot_y = msg.poses[0].pose.position.y
 
@@ -245,7 +244,6 @@ class SafeDaggerInferenceNode(Node):
             dy = goal_robot_frame.pose.position.y
 
             goal_distance = np.sqrt(dx**2 + dy**2)
-            # goal_angle    = np.arctan2(dy, dx)
 
             # Deadband guard: if we are very close to the goal, clamp angle to 0
             # to prevent origin mathematical singularity and angular oscillations.

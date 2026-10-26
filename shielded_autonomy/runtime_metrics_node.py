@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 runtime_metrics_node.py
 
@@ -23,11 +24,11 @@ class RuntimeMetricsNode(Node):
         super().__init__('runtime_metrics_node')
 
         # --- Parameters ---
-        self.declare_parameter('policy_name', 'safe_dagger')
-        self.declare_parameter('environment', 'world')
+        self.declare_parameter('policy_name', 'shared_autonomy')
+        self.declare_parameter('environment', 'unknown_environment')
         self.declare_parameter('scenario', 'scenario_1')
         self.declare_parameter('run_number', 1)
-        self.declare_parameter('output_directory', '~/nav2_ws/src/shielded_autonomy/')
+        self.declare_parameter('output_directory', '~/nav2_ws/src/shielded_autonomy/results/runtime_shared_autonomy')
         if not self.has_parameter('use_sim_time'):
             self.declare_parameter('use_sim_time', True)# Ensure simulation clock is used by default
 
@@ -37,8 +38,8 @@ class RuntimeMetricsNode(Node):
         self.NEAR_MISS_HYSTERESIS = 0.05 # 5cm hysteresis to prevent near-miss chattering
         
         # Stuck and Timeout limits (in simulation seconds)
-        self.STUCK_TIMEOUT_LIMIT = 50.0   # Timeout if robot is stuck / not making progress for 50s
-        self.ABSOLUTE_TIMEOUT_LIMIT = 300.0 # Absolute safety limit (e.g. if robot circles forever)
+        self.STUCK_TIMEOUT_LIMIT = 50.0   
+        self.ABSOLUTE_TIMEOUT_LIMIT = 300.0 
 
         # --- State Variables ---
         self.recording_active = True
@@ -66,14 +67,14 @@ class RuntimeMetricsNode(Node):
         self.latest_raw_reason = ""
         
         self.intervention_count = 0
-        self.successful_recoveries = 0
+        self.stable_recovery_count = 0
         self.total_expert_control_time = 0.0
         self.maximum_intervention_duration = 0.0
         self.intervention_start_nav_time = None
         self.collision_in_current_intervention = False
 
         # Stability Window for Recoveries (using Nav2 Master Timeline)
-        self.pending_recoveries = []  # List of pending recoveries currently in their 2s stability window
+        self.pending_recoveries = []  
 
         # Takeover obstacle distance tracking
         self.current_min_scan_dist = float('inf')
@@ -153,7 +154,7 @@ class RuntimeMetricsNode(Node):
             self.pending_recoveries.clear()
             
             self.get_logger().warn(
-                f"⚠️ Takeover [{self.intervention_count}]: MPPI Expert took control! "
+                f"Takeover [{self.intervention_count}]: MPPI Expert took control! "
                 f"Takeover obstacle distance: {dist_at_takeover:.3f}m"
             )
 
@@ -164,7 +165,7 @@ class RuntimeMetricsNode(Node):
                 self.total_expert_control_time += duration
                 self.maximum_intervention_duration = max(self.maximum_intervention_duration, duration)
 
-                self.get_logger().info(f"🔄 Control returned to BC. Intervention duration: {duration:.2f}s")
+                self.get_logger().info(f"Control returned to BC. Intervention duration: {duration:.2f}s")
 
                 # If no collision occurred during this intervention, start its stability window
                 if not self.collision_in_current_intervention:
@@ -291,7 +292,7 @@ class RuntimeMetricsNode(Node):
             if tracked_item is not None:
                 status_code = tracked_item.status
                 if status_code in [4, 5, 6]:
-                    self.get_logger().info(f"🏁 Goal status ended with code: {status_code}")
+                    self.get_logger().info(f"Goal status ended with code: {status_code}")
                     if status_code == 4:
                         self.stop_and_save("success")
                     else:
@@ -308,8 +309,8 @@ class RuntimeMetricsNode(Node):
                 continue
             elapsed_stability = self.last_navigation_time - pending['end_time']
             if elapsed_stability >= 2.0:
-                self.successful_recoveries += 1
-                self.get_logger().info(f"Stability window passed! Successful recovery: {self.successful_recoveries}")
+                self.stable_recovery_count += 1
+                self.get_logger().info(f"Stability window passed! Stable recovery: {self.stable_recovery_count}")
             else:
                 active_pending.append(pending)
         self.pending_recoveries = active_pending
@@ -327,7 +328,7 @@ class RuntimeMetricsNode(Node):
         # 2. Absolute timeout check
         if self.last_navigation_time > self.ABSOLUTE_TIMEOUT_LIMIT:
             self.get_logger().warn(
-                f"⏱️ Absolute simulation timeout reached ({self.last_navigation_time:.1f}s > {self.ABSOLUTE_TIMEOUT_LIMIT}s)"
+                f"Absolute simulation timeout reached ({self.last_navigation_time:.1f}s > {self.ABSOLUTE_TIMEOUT_LIMIT}s)"
             )
             self.stop_and_save("timeout")
             return
@@ -355,7 +356,7 @@ class RuntimeMetricsNode(Node):
         # Evaluate any remaining pending recoveries (they successfully got the robot to the goal/termination without failure)
         for pending in self.pending_recoveries:
             if not pending['has_failed']:
-                self.successful_recoveries += 1
+                self.stable_recovery_count += 1
         self.pending_recoveries.clear()
 
         # Measure navigation duration directly from Nav2 action feedback
@@ -377,6 +378,17 @@ class RuntimeMetricsNode(Node):
         expert_distance_percentage = 0.0
         if self.total_actual_path_length > 0.0:
             expert_distance_percentage = (self.distance_under_expert_control / self.total_actual_path_length) * 100.0
+
+        # Autonomy Metrics
+        autonomy_time_percentage = 100.0 - expert_time_percentage
+        autonomy_distance_percentage = 100.0 - expert_distance_percentage
+
+        # Mean Time Between Interventions (MTBI)
+        mean_time_between_interventions = 0.0
+        if self.intervention_count > 0:
+            mean_time_between_interventions = (navigation_time - self.total_expert_control_time) / self.intervention_count
+        else:
+            mean_time_between_interventions = navigation_time
 
         # Log a warning if expert control time exceeds navigation time
         if self.total_expert_control_time > navigation_time:
@@ -404,7 +416,7 @@ class RuntimeMetricsNode(Node):
             'scenario': scenario,
             'run': run_number,
             'intervention_count': self.intervention_count,
-            'successful_recoveries': self.successful_recoveries,
+            'stable_recovery_count': self.stable_recovery_count,
             'navigation_time': round(navigation_time, 2),
             'expert_control_time': round(self.total_expert_control_time, 2),
             'average_intervention_duration': round(avg_intervention_duration, 2),
@@ -412,6 +424,9 @@ class RuntimeMetricsNode(Node):
             'distance_under_expert_control': round(self.distance_under_expert_control, 2),
             'expert_distance_percentage': round(expert_distance_percentage, 2),
             'expert_time_percentage': round(expert_time_percentage, 2),
+            'autonomy_time_percentage': round(autonomy_time_percentage, 2),
+            'autonomy_distance_percentage': round(autonomy_distance_percentage, 2),
+            'mean_time_between_interventions': round(mean_time_between_interventions, 2),
             'average_takeover_obstacle_distance': round(average_takeover_obstacle_distance, 3),
             'minimum_takeover_obstacle_distance': round(minimum_takeover_obstacle_distance, 3),
             'maximum_takeover_obstacle_distance': round(maximum_takeover_obstacle_distance, 3),
@@ -420,7 +435,7 @@ class RuntimeMetricsNode(Node):
         # Resolve CSV path
         output_dir_expanded = os.path.expanduser(output_directory)
         os.makedirs(output_dir_expanded, exist_ok=True)
-        csv_filepath = os.path.join(output_dir_expanded, 'runtime_framework_metrics.csv')
+        csv_filepath = os.path.join(output_dir_expanded, 'unknown_environent_runtime_framework_metrics_2.csv')
 
         # Write to CSV (append mode)
         file_exists = os.path.exists(csv_filepath)

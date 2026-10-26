@@ -13,9 +13,9 @@ def generate_launch_description():
     nav2_bringup_pkg = get_package_share_directory('nav2_bringup') # Needed for localization
 
     #Default fallback path
-    default_map_file = os.path.join(pkg, 'maps', 'world_map.yaml')
+    default_map_file = os.path.join(pkg, 'maps', 'experiment_b_map2.yaml')
     defualt_params_file = os.path.join(pkg, 'config', 'nav2_params_mppi.yaml')
-    defualt_world_file = os.path.join(pkg, 'worlds', 'research_office_world.sdf')
+    defualt_world_file = os.path.join(pkg, 'worlds', 'experiment_b_world2.sdf')
     rviz_config_dir = os.path.join(get_package_share_directory('turtlebot3_navigation2'), 'rviz', 'tb3_navigation2.rviz')
 
     use_sim_time = LaunchConfiguration('use_sim_time')

@@ -13,11 +13,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        # Add worlds folder
         ('share/' + package_name + '/worlds', glob('worlds/*.sdf')),
-        # Add all launch files
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
-        #add rviz_config
         ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
         ('share/' + package_name + '/maps', glob('maps/*')),
         ('share/' + package_name + '/config', glob('config/*')),
@@ -51,6 +48,7 @@ setup(
             'arbitration_node_v2 = shielded_autonomy.arbitration_node_v2:main',
             'policy_metrics_node = shielded_autonomy.policy_metrics_node:main',
             'runtime_metrics_node = shielded_autonomy.runtime_metrics_node:main',
+            'export_nav2_paths = shielded_autonomy.export_nav2_paths:main',
         ],
     },
 )

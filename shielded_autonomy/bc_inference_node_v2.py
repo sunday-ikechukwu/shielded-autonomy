@@ -23,9 +23,9 @@ class BCInferenceNodeV2(Node):
         # ── Parameters ────────────────────────────────────────────────────
         # Paths to model and normalization stats.
         self.declare_parameter('model_path',
-            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/bc_model_v2/bc_policy.onnx'))
+            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/bc_model/bc_policy.onnx'))
         self.declare_parameter('norm_stats_path',
-            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/bc_model_v2/bc_norm_stats.npz'))
+            os.path.expanduser('~/nav2_ws/src/shielded_autonomy/models/bc_model/bc_norm_stats.npz'))
         self.declare_parameter('scan_range_max', 3.5)
         self.declare_parameter('inference_hz', 10.0)
 
@@ -177,7 +177,7 @@ class BCInferenceNodeV2(Node):
             for status_item in msg.status_list:
                 if status_item.status in [1, 2]:
                     self.tracked_goal_id = tuple(status_item.goal_info.goal_id.uuid)
-                    self.get_logger().info(f"✅ New Nav2 Goal Accepted! Tracking Goal ID: {self.tracked_goal_id}")
+                    self.get_logger().info(f"New Nav2 Goal Accepted! Tracking Goal ID: {self.tracked_goal_id}")
                     self.navigating = True
                     break
 
@@ -192,7 +192,7 @@ class BCInferenceNodeV2(Node):
             if tracked_item is not None:
                 status_code = tracked_item.status
                 if status_code in [4, 5, 6]:
-                    self.get_logger().info(f"🛑 Tracked Goal Ended (Status: {status_code}). Stopping BC Policy.")
+                    self.get_logger().info(f"Tracked Goal Ended (Status: {status_code}). Stopping BC Policy.")
                     self.navigating = False
                     self.current_goal = None
                     self.current_plan = []
@@ -277,7 +277,6 @@ class BCInferenceNodeV2(Node):
             dy = goal_robot_frame.pose.position.y
 
             goal_distance = np.sqrt(dx**2 + dy**2)
-            # goal_angle    = np.arctan2(dy, dx)
             
             # Deadband guard: if we are very close to the goal, clamp angle to 0
             # to prevent origin mathematical singularity and angular oscillations.
@@ -285,7 +284,6 @@ class BCInferenceNodeV2(Node):
                 goal_angle = 0.0
             else:
                 goal_angle = np.arctan2(dy, dx)
-
 
             return np.array([goal_distance, goal_angle],
                             dtype=np.float32)

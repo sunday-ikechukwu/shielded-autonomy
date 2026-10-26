@@ -53,7 +53,6 @@ class ArbitrationNodeV2(Node):
         self.mode_pub.publish(msg)
 
     def safety_callback(self, msg: Bool):
-        ##ADDED
         if self.tracked_goal_id is None:
             # If not tracking any goal, ensure we stay in BC_POLICY and reset state variables
             self.mode = 'BC_POLICY'
@@ -70,7 +69,6 @@ class ArbitrationNodeV2(Node):
             # The countdown will only begin once is_risk_detected becomes False.
             self.recovery_end_time = current_time + self.recovery_duration
 
-            ##ADDED
             if self.mode == 'BC_RECOVERY':
                 # During recovery mode, we ignore new takeover requests and let BC run for 1.5s
                 if current_time > self.bc_recovery_end_time:
@@ -91,39 +89,17 @@ class ArbitrationNodeV2(Node):
 
             elif self.mode == 'EXPERT':
                 # Evaluate Deadlock: Has it been too long AND is the expert paralyzed?
-                # time_in_expert = current_time - self.expert_start_time
                 is_stuck = (abs(self.latest_mppi_v) < self.stuck_vel_threshold 
                         and abs(self.latest_mppi_w) < self.stuck_vel_threshold)
-                
-                # if time_in_expert > self.deadlock_timeout and is_stuck:
-                #     self.get_logger().error("!!! EXPERT DEADLOCK DETECTED (0 vel). Forcing BC Handoff !!!")
-                #     self.mode = "BC_POLICY"
-                #     self.recovery_end_time = current_time + 1.5
-                
+
                 if is_stuck:
                     if self.expert_stuck_start_time is None:
                         self.expert_stuck_start_time = current_time
-
-                    # elif current_time - self.expert_stuck_start_time > self.deadlock_timeout:
-                    #     self.get_logger().error("!!! EXPERT DEADLOCK DETECTED (0 vel). Forcing BC Handoff !!!")
-                    #     self.mode = "BC_POLICY"
-                    #     self.recovery_end_time = current_time + 1.5
-                    #     self.expert_stuck_start_time = None
                     elif current_time - self.expert_stuck_start_time > self.deadlock_timeout:
-                        # self.get_logger().error("!!! EXPERT DEADLOCK DETECTED (0 vel). Cancelling active goal request !!!")
-                        # self.cancel_current_goal()
-                        
-                        # # Stop the robot immediately
-                        # stop_cmd = Twist()
-                        # self.cmd_pub.publish(stop_cmd)
-                        
-                        # self.expert_stuck_start_time = None
-                        ###ADDED
                         self.get_logger().error("!!! EXPERT DEADLOCK DETECTED (0 vel). Switching to BC Recovery (Shake-Up) !!!")
                         self.mode = 'BC_RECOVERY'
                         self.bc_recovery_end_time = current_time + 3 #1.5
                         self.expert_stuck_start_time = None
-
                 else:
                     self.expert_stuck_start_time = None
             
@@ -138,7 +114,6 @@ class ArbitrationNodeV2(Node):
                 and self.latest_mppi_v > 0.05  # Make sure MPPI is moving forward, not deadlocked
             )
 
-            ###ADDED
             if self.mode == 'BC_RECOVERY':
                 # If risk cleared during BC recovery, we can switch back to BC_POLICY!
                 is_still_stuck = (abs(self.latest_mppi_v) < self.stuck_vel_threshold 
@@ -147,7 +122,6 @@ class ArbitrationNodeV2(Node):
                     self.mode = "BC_POLICY"
                     self.get_logger().info("<<< BC Recovery cleared the risk/deadlock. Resuming normal BC_POLICY control. >>>")
             
-
             # No risk currently detected. Check if our recovery timer has expired.
             elif current_time > self.recovery_end_time and maneuver_complete:
                 self.mode = "BC_POLICY"
@@ -155,7 +129,6 @@ class ArbitrationNodeV2(Node):
         if self.mode != self.previous_mode:
             if self.mode == 'EXPERT':
                 self.get_logger().warn(">>> TAKEOVER: MPPI Expert is executing recovery! <<<")
-            ##ADDED
             elif self.mode == 'BC_RECOVERY':
                 self.get_logger().warn(">>> RECOVERY SHAKE-UP: Forcing BC Policy to break deadlock! <<<")
             else:
@@ -172,16 +145,14 @@ class ArbitrationNodeV2(Node):
         if self.tracked_goal_id is None:
             for status_item in msg.status_list:
                 if status_item.status in [1, 2]:
-                    # self.tracked_goal_id = tuple(status_item.goal_info.goal_id.uuid)
                     self.tracked_goal_id = tuple(int(x) for x in status_item.goal_info.goal_id.uuid)
-                    self.get_logger().info(f"✅ New Nav2 Goal Accepted! Tracking Goal ID in Arbitrator: {self.tracked_goal_id}")
+                    self.get_logger().info(f"New Nav2 Goal Accepted! Tracking Goal ID in Arbitrator: {self.tracked_goal_id}")
                     break
 
         # If we are tracking a goal, monitor its lifecycle
         if self.tracked_goal_id is not None:
             tracked_item = None
             for status_item in msg.status_list:
-                # if tuple(status_item.goal_info.goal_id.uuid) == self.tracked_goal_id:
                 if tuple(int(x) for x in status_item.goal_info.goal_id.uuid) == self.tracked_goal_id:
                     tracked_item = status_item
                     break
@@ -189,7 +160,7 @@ class ArbitrationNodeV2(Node):
             if tracked_item is not None:
                 status_code = tracked_item.status
                 if status_code in [4, 5, 6]:
-                    self.get_logger().info(f"🛑 Tracked Goal Ended (Status: {status_code}). Resetting Arbitrator to BC_POLICY and clearing stale expert velocities.")
+                    self.get_logger().info(f"Tracked Goal Ended (Status: {status_code}). Resetting Arbitrator to BC_POLICY and clearing stale expert velocities.")
                     # Reset Mode and expert velocity state variables to clear stale data
                     self.mode = 'BC_POLICY'
                     self.previous_mode = 'BC_POLICY'
@@ -216,7 +187,6 @@ class ArbitrationNodeV2(Node):
 
         if self.cancel_client.service_is_ready():
             req = CancelGoal.Request()
-            # req.goal_info.goal_id.uuid = list(self.tracked_goal_id)
             req.goal_info.goal_id.uuid = [int(x) for x in self.tracked_goal_id]
             self.cancel_client.call_async(req)
             self.get_logger().info("Cancel request sent successfully.")
@@ -225,7 +195,6 @@ class ArbitrationNodeV2(Node):
 
     
     def bc_callback(self, msg: Twist):
-        # if self.mode == 'BC_POLICY':
         if self.mode in ['BC_POLICY', 'BC_RECOVERY']:
             self.cmd_pub.publish(msg)
 

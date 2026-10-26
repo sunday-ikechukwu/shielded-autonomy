@@ -34,9 +34,9 @@ class SafetyMonitorNodeV2(Node):
         self.latest_scan     = None
         self.latest_rear_scan = None
         self.latest_bc_v     = None
-        self.latest_bc_w     = None     # BC angular velocity
+        self.latest_bc_w     = None     
         self.latest_mppi_v   = None
-        self.latest_mppi_w   = None     # MPPI angular velocity
+        self.latest_mppi_w   = None    
         self.tracked_goal_id = None
         
 
@@ -50,14 +50,13 @@ class SafetyMonitorNodeV2(Node):
         #____________Subscribers____________________________
         self.scan_sub  = self.create_subscription(LaserScan, '/scan', self.scan_callback, qos_profile=sensor_qos)
         
-        # Listen to BOTH brains!
         self.bc_sub   = self.create_subscription(Twist, '/cmd_vel_bc', self.bc_callback, 10)
         self.mppi_sub = self.create_subscription(Twist, '/cmd_vel_mppi', self.mppi_callback, 10)
         self.status_sub = self.create_subscription(GoalStatusArray, '/navigate_to_pose/_action/status', self.status_callback, 10)
 
         #___________Publishers_________________________________
         self.safety_pub = self.create_publisher(Bool, '/safety_status', 10)
-        self.reason_pub = self.create_publisher(String, '/trigger_reason', 10) # PHASE 2: Reason publisher
+        self.reason_pub = self.create_publisher(String, '/trigger_reason', 10) 
 
         #___________Evaluation Timer_________________________
         self.timer = self.create_timer(1.0 / check_hz, self.safety_check_loop)
@@ -98,17 +97,14 @@ class SafetyMonitorNodeV2(Node):
         if self.tracked_goal_id is None:
             for status_item in msg.status_list:
                 if status_item.status in [1, 2]:
-                    # self.tracked_goal_id = tuple(status_item.goal_info.goal_id.uuid)
-                    ##ADDED
                     self.tracked_goal_id = tuple(int(x) for x in status_item.goal_info.goal_id.uuid)
-                    self.get_logger().info(f"✅ New Nav2 Goal Accepted! Tracking Goal ID in Safety Monitor: {self.tracked_goal_id}")
+                    self.get_logger().info(f"New Nav2 Goal Accepted! Tracking Goal ID in Safety Monitor: {self.tracked_goal_id}")
                     break
 
         # If we are tracking a goal, monitor its lifecycle
         if self.tracked_goal_id is not None:
             tracked_item = None
             for status_item in msg.status_list:
-                # if tuple(status_item.goal_info.goal_id.uuid) == self.tracked_goal_id:
                 if tuple(int(x) for x in status_item.goal_info.goal_id.uuid) == self.tracked_goal_id:
                     tracked_item = status_item
                     break
@@ -116,7 +112,7 @@ class SafetyMonitorNodeV2(Node):
             if tracked_item is not None:
                 status_code = tracked_item.status
                 if status_code in [4, 5, 6]:
-                    self.get_logger().info(f"🛑 Tracked Goal Ended (Status: {status_code}). Resetting Safety Monitor stale values.")
+                    self.get_logger().info(f"Tracked Goal Ended (Status: {status_code}). Resetting Safety Monitor stale values.")
                     # Reset values to None to prevent safety checks using stale velocities
                     self.latest_bc_v = None
                     self.latest_bc_w = None

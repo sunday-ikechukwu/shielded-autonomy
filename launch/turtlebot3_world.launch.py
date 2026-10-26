@@ -96,7 +96,7 @@ def generate_launch_description():
     ld.add_action(declare_y_arg)
     ld.add_action(declare_yaw_arg)
     ld.add_action(gzserver_cmd)
-    ld.add_action(gzclient_cmd) # Optional:  Uncomment to launch Gazebo client (GUI)
+    # ld.add_action(gzclient_cmd) # Optional:  Uncomment to launch Gazebo client (GUI)
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(spawn_turtlebot_cmd)
 

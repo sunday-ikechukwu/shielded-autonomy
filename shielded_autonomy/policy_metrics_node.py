@@ -22,11 +22,11 @@ class PolicyMetricsNode(Node):
         super().__init__('policy_metrics_node')
 
         # --- Parameters ---
-        self.declare_parameter('policy_name', 'bc')
-        self.declare_parameter('environment', 'world')
+        self.declare_parameter('policy_name', 'mppi')
+        self.declare_parameter('environment', 'unknown_environment')
         self.declare_parameter('scenario', 'scenario_1')
         self.declare_parameter('run_number', 1)
-        self.declare_parameter('output_directory', '~/nav2_ws/src/shielded_autonomy/')
+        self.declare_parameter('output_directory', '~/nav2_ws/src/shielded_autonomy/results/experiment_B')
         if not self.has_parameter('use_sim_time'):
             self.declare_parameter('use_sim_time', True)# Ensure simulation clock is used by default
 
@@ -36,8 +36,8 @@ class PolicyMetricsNode(Node):
         self.NEAR_MISS_HYSTERESIS = 0.05 # 5cm hysteresis to prevent near-miss chattering
         
         # Stuck and Timeout limits (in simulation seconds)
-        self.STUCK_TIMEOUT_LIMIT = 50.0    # Timeout if robot is stuck / not making progress for 50s
-        self.ABSOLUTE_TIMEOUT_LIMIT = 300.0 # Absolute safety limit (e.g. if robot circles forever)
+        self.STUCK_TIMEOUT_LIMIT = 60.0    
+        self.ABSOLUTE_TIMEOUT_LIMIT = 300.0 
 
         # --- State Variables ---
         self.recording_active = True
@@ -326,7 +326,7 @@ class PolicyMetricsNode(Node):
         # Resolve CSV path
         output_dir_expanded = os.path.expanduser(output_directory)
         os.makedirs(output_dir_expanded, exist_ok=True)
-        csv_filepath = os.path.join(output_dir_expanded, 'policy_evaluation_metrics.csv')
+        csv_filepath = os.path.join(output_dir_expanded, 'mppi_evaluation_metrics.csv')
 
         # Write to CSV (append mode)
         file_exists = os.path.exists(csv_filepath)

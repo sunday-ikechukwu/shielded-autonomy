@@ -43,7 +43,6 @@ class ImitationDataRecorderV2(Node):
         self.max_steps = self.get_parameter('max_steps').value
         self.scan_range_max = self.get_parameter('scan_range_max').value
         
-        # Create save directory if it doesn't exist
         os.makedirs(self.save_directory, exist_ok=True)
 
         # State Machine Variables
@@ -60,7 +59,6 @@ class ImitationDataRecorderV2(Node):
         # Initialize data buffers
         self.reset_buffers()
 
-        # QoS profile for sensor
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
@@ -113,7 +111,6 @@ class ImitationDataRecorderV2(Node):
             robot_x = transform.transform.translation.x
             robot_y = transform.transform.translation.y
         except TransformException as e:
-            # If TF not ready, gracefully fall back to the start of the path
             robot_x = msg.poses[0].pose.position.x
             robot_y = msg.poses[0].pose.position.y
 
@@ -269,14 +266,10 @@ class ImitationDataRecorderV2(Node):
                 self.current_goal, transform
             )
 
-            dx = goal_robot_frame.pose.position.x      # forward distance to goal
-            dy = goal_robot_frame.pose.position.y      # lateral distance to goal
-
-            # How far is the goal
+            dx = goal_robot_frame.pose.position.x      
+            dy = goal_robot_frame.pose.position.y      
             goal_distance = np.sqrt(dx**2 + dy**2)
 
-            # # Which direction to turn to FACE the goal right now
-            # goal_angle = np.arctan2(dy, dx)
             # Deadband guard: if we are very close to the goal, clamp angle to 0
             # to prevent origin mathematical singularity and angular oscillations.
             if goal_distance < 0.15:
@@ -305,7 +298,6 @@ class ImitationDataRecorderV2(Node):
             f.create_dataset('goal_local', data=np.array(self.goal_local_buffer))
             f.create_dataset('actions',    data=np.array(self.actions_buffer))
             
-            # add timestamp to calculate effective polling rate later if needed
             f.create_dataset('timestamps_sec', data=np.array(self.time_buffer, dtype=np.float64))
 
             # Metadata — outcome flag is the critical one.
@@ -320,7 +312,6 @@ class ImitationDataRecorderV2(Node):
             f'Episode saved [{self.episode_outcome}]: {self.step_count} steps → {filename}'
         )
 
-        # Clear RAM 
         self.reset_buffers()
 
 
