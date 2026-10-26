@@ -1,0 +1,96 @@
+scenarios:
+  - id: B1
+    description: "West Corridor straight-line run"
+    start:
+      x: -4.25
+      y: -4.0
+      yaw: 1.57
+    goal:
+      x: -4.25
+      y: 3.0
+      yaw: 1.57
+    behaviour: "West Corridor straight-line tracking, velocity stability."
+
+  - id: B2
+    description: "T-junction left turn"
+    start:
+      x: 0.0
+      y: -2.5
+      yaw: -1.57
+    goal:
+      x: 2.0
+      y: -4.1
+      yaw: 0.0
+    behaviour: "T-junction turning left (East) into Bottom Corridor."
+
+  - id: B3
+    description: "T-junction Right turn"
+    start:
+      x: 0.0
+      y: -2.5
+      yaw: -1.57
+    goal:
+      x: -2.0
+      y: -4.1
+      yaw: 3.14
+    behaviour: "T-junction turning right (West) into Bottom Corridor."
+
+  - id: B4
+    description: "Blind corner East turn"
+    start:
+      x: -4.25
+      y: 1.0
+      yaw: 1.57
+    goal:
+      x: -2.0
+      y: 4.25
+      yaw: 1.57
+    behaviour: "90° blind corner turn East inside New Room around the Corner Box."
+
+  - id: B5
+    description: "Room-to-Room transition"
+    start:
+      x: -2.1
+      y: 2.0
+      yaw: -1.57
+    goal:
+      x: -2.1
+      y: -2.5
+      yaw: -1.57
+    behaviour: "Room-to-Room transition (NW room to SW room) negotiating doorways and SW room pillar."
+
+  - id: B6
+    description: "Couch S-curve avoidance"
+    start:
+      x: 3.0
+      y: 0.5
+      yaw: -1.57
+    goal:
+      x: 3.0
+      y: -2.5
+      yaw: -1.57
+    behaviour: "Couch avoidance, S-curve steering, and bottleneck alignment."
+
+  - id: B7
+    description: "Bottleneck traversal"
+    start:
+      x: 3.0
+      y: -1.0
+      yaw: -1.57
+    goal:
+      x: 3.0
+      y: -4.1
+      yaw: -1.57
+    behaviour: "Dedicated bottleneck traversal (0.9m width)."
+
+  - id: B8
+    description: "Long-Horizon Generalization"
+    start:
+      x: -4.25
+      y: -4.0
+      yaw: 0.0
+    goal:
+      x: 3.0
+      y: 4.5
+      yaw: 0.0
+    behaviour: "End-to-End Unseen Environment Navigation: Start bottom-left -> West Corridor -> New Room (Blind Corner) -> North Corridor -> Offset Doorway -> Slalom Desk -> Goal at top-right room behind desk/chair."

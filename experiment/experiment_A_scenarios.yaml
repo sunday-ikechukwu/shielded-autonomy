@@ -1,0 +1,89 @@
+scenarios:
+  - id: A1
+    description: "Short Distance Goal"
+    start:
+      x: 3.8
+      y: -6.5
+      yaw: 0.0
+    goal:
+      x: 9.0
+      y: -6.5
+    behaviour: "Evaluates basic goal convergence over a short distance in the conference room."
+
+  - id: A2
+    description: "Long Corridor Goal"
+    start:
+      x: -2.0
+      y: 2.6
+      yaw: 0.0
+    goal:
+      x: 9.0
+      y: 2.6
+    behaviour: "Evaluates long straight-line corridor navigation and heading stability."
+
+  - id: A3
+    description: "Goal Between Obstacles"
+    start:
+      x: -2.2
+      y: -6.5
+      yaw: 1.57079632679
+    goal:
+      x: -0.5
+      y: -5.2
+    behaviour: "Evaluates precision navigation through the narrow gap between the lounge table and lounge couch."
+
+  - id: A4
+    description: "Goal Behind Robot"
+    start:
+      x: 7.5
+      y: 6.5
+      yaw: 0.0
+    goal:
+      x: 2.0
+      y: 6.5
+    behaviour: "Evaluates the robot's ability to execute an initial 180-degree reorientation to reach a goal behind it."
+
+  - id: A5
+    description: "Left Turn to Goal"
+    start:
+      x: 1.5
+      y: 0.0
+      yaw: 0.0
+    goal:
+      x: 4.5
+      y: 4.0
+    behaviour: "Evaluates continuous left-turn navigation from the corridor into the lab room."
+
+  - id: A6
+    description: "Right Turn to Goal"
+    start:
+      x: 6.0
+      y: 0.0
+      yaw: 3.14159265359
+    goal:
+      x: 4.5
+      y: 4.0
+    behaviour: "Evaluates continuous right-turn navigation from the corridor into the lab room."
+
+  - id: A7
+    description: "Thin U-Turn"
+    start:
+      x: 2.0 #2.4 
+      y: 0.8 #-3.5
+      yaw: 0.0 #1.57079632679
+    goal:
+      x: 2.0 #4.1
+      y: 3.0 #-2.8 
+    behaviour: "Evaluates U-turn behavior by requiring navigation around the lounge-conference partition wall."
+  
+  - id: A8
+    description: "Wide U-Turn Around Large Obstacle"
+    start:
+      x: 6.5
+      y: -3.6
+      yaw: 0.0
+    goal:
+      x: 6.5
+      y: -6.5
+    behaviour: "Evaluate smooth navigation around large static obstacles requiring a wide-radius U-turn."
+
