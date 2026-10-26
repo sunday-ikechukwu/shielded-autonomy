@@ -1,330 +1,183 @@
-# Shielded DAgger: A Deterministic Fallback Architecture for Safe Imitation Learning in Robotics
+# Navigating the Shielding Paradox: Runtime Shared Autonomy for Safe Learning-Based Mobile Robot Navigation
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
-[![ROS 2](https://img.shields.io/badge/ROS-2-22314E.svg)](https://www.ros.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.3-red.svg)](https://pytorch.org)
-[![Nav2](https://img.shields.io/badge/Navigation-Nav2-purple.svg)](https://navigation.ros.org/)
-[![Controller](https://img.shields.io/badge/Expert-MPPI-orange.svg)]()
-[![Gazebo](https://img.shields.io/badge/Simulator-Gazebo-orange.svg)](https://gazebosim.org/)
-[![ONNX](https://img.shields.io/badge/Inference-ONNX-green.svg)](https://onnx.ai/)
+[![Paper](https://img.shields.io/badge/Paper-PDF-red)](paper/ICAIR_2026_Paper_93_Revised_Manuscript_Ikechukwu.pdf)
+[![Project Page](https://img.shields.io/badge/Project-Page-blue)](https://your-website.com/project)
+[![Conference](https://img.shields.io/badge/Accepted-MIRG--ICAIR_2026-success.svg)]()
+[![ROS 2](https://img.shields.io/badge/ROS_2-Humble-22314E.svg)](https://docs.ros.org/en/humble/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.3+-EE4C2C.svg)](https://pytorch.org)
+[![Nav2](https://img.shields.io/badge/Navigation-Nav2_MPPI-purple.svg)](https://navigation.ros.org/)
+[![Inference](https://img.shields.io/badge/Inference-ONNX_Runtime-green.svg)](https://onnx.ai/)
 
-## Overview
-
-This repository contains the implementation of **Shielded DAgger**, a safety-aware imitation learning framework for autonomous robot navigation in unstructured environments.
-
-The project addresses one of the major limitations of standard imitation learning: **covariate shift**. Even when a behavior-cloned policy achieves low offline loss, small prediction errors can accumulate during deployment, pushing the robot into out-of-distribution (OOD) states where failures become likely.
-
-Shielded DAgger is designed to mitigate this by combining:
-
-- A fast learned policy for nominal control  
-- A deterministic **MPPI expert planner** for recovery  
-- A real-time **safety shield** for arbitration  
-- A **Safe DAgger pipeline** for dataset aggregation  
-
-When the learned policy approaches unsafe or unfamiliar states, control is transferred to the expert planner. Recovery trajectories are recorded and used to iteratively improve the policy on failure cases.
+This repository contains the official implementation of the paper **"Navigating the Shielding Paradox: Runtime Shared Autonomy for Safe Learning-Based Mobile Robot Navigation"**, accepted at the **International Conference on Artificial Intelligence and Robotics (MIRG-ICAIR 2026)**.
 
 ---
 
-## Research Objective
+## 📌 Abstract
 
-Design a safe imitation learning pipeline that reduces collision rates by shielding learned policies from catastrophic out-of-distribution failures while allowing continuous adaptation through expert intervention.
+Deploying learning-based navigation policies on mobile robots is challenging because covariate shift can lead to states poorly represented in training data, increasing the risk of collisions. This framework presents a runtime shared-autonomy architecture that arbitrates control between a learned navigation policy (Behavior Cloning / Safe DAgger) and a Nav2 Model Predictive Path Integral (MPPI) expert controller using geometric risk criteria and policy–expert disagreement. 
 
-**Manuscript in preparation:**  
-**Ikechukwu S.**  
-*"Runtime Shared Autonomy for Safe Leanring-Based Navigation"* (Under Review)
+By retaining expert-labelled recovery windows including a 10-step ($1.0\text{ s}$) pre-trigger history for offline policy retraining, the retrained policy successfully matches the expert's completion rate across complex indoor environments. However, runtime evaluation also exposes the **"Shielding Paradox"**: while classical planner intervention prevents catastrophic boundary breaches, conservative costmap constraints can induce deadlocks in tight, cluttered spaces.
 
 ---
 
-## Motivation: Why Shielded DAgger?
+## 📄 Paper & Documentation
 
-In standard Behavior Cloning (BC), a neural network learns a mapping:
-
-**State → Action**
-
-where state includes:
-
-- LiDAR observations  
-- Robot odometry  
-- Local goal information  
-
-and action includes:
-
-- Linear velocity (`v`)
-- Angular velocity (`ω`)
-
-The problem is that BC assumes the robot remains within the same state distribution as the training data.
-
-In reality, small prediction errors compound over time.
-
-A slight steering mistake can produce a new state the policy has never seen before. Once outside the training distribution, predictions become unreliable and may lead to collisions.
-
-This is the classic **covariate shift problem**.
+- **Accepted Manuscript:** [`paper/ICAIR_2026_Paper_93_Revised_Manuscript_Ikechukwu.pdf`](paper/ICAIR_2026_Paper_93_Revised_Manuscript_Ikechukwu.pdf)
+- **Author:** Sunday Ikechukwu (*Department of Mechatronics Engineering, University of Benin*)
+- **Venue:** International Conference on Artificial Intelligence and Robotics (MIRG-ICAIR 2026)
 
 ---
 
-## Core Idea
-
-Instead of replacing classical planning entirely, Shielded DAgger treats the learned policy as a lightweight approximation of an expert planner.
-
-- **Neural Policy:** fast inference (~O(1))
-- **MPPI Expert:** robust but computationally expensive
-- **Safety Shield:** monitors policy reliability
-
-The safety shield ensures the robot remains within safe operational boundaries.
-
-If the learned policy violates safety constraints, the expert takes over.
-
-This creates a practical form of **safe dataset aggregation (DAgger)**.
+## 🔬 Reproducing Results (Traceability Matrix)
+To reproduce the findings, tables, and figures from the paper, use the following mapping between the paper sections and repository code:
+| Paper Artifact | Description | Corresponding Source / Script | Execution / Launch Entrypoint |
+| :--- | :--- | :--- | :--- |
+| **Table 1** | Monitor Trigger Rules & Disagreement Conditions | [`shielded_autonomy/safety_monitor_node_v2.py`](shielded_autonomy/safety_monitor_node_v2.py) | Active within `ros2 launch shielded_autonomy safe_dagger.launch.py` |
+| **Table 2** | Training Datasets ($D_{\text{initial}}, D_{\text{rec,1}}, D_{\text{rec,2}}$) | [`shielded_autonomy/imitation_data_recorder_v2.py`](shielded_autonomy/imitation_data_recorder_v2.py), [`safe_dagger_recorder_node_v2.py`](shielded_autonomy/safe_dagger_recorder_node_v2.py) | Automatic logging during monitored takeovers |
+| **Table 3** | Exp. A & B: Standalone Benchmark (BC $\pi_0$, RC-BC $\pi_1$, Final RC-B $\pi_2$, MPPI) | [`shielded_autonomy/policy_metrics_node.py`](shielded_autonomy/policy_metrics_node.py), [`bc_inference_node_v2.py`](shielded_autonomy/bc_inference_node_v2.py), [`safe_dagger_inference_node.py`](shielded_autonomy/safe_dagger_inference_node.py) | `ros2 run shielded_autonomy [bc\|safe_dagger]_inference_node --ros-args --remap /cmd_vel_bc:=/cmd_vel`<br>+ `ros2 run shielded_autonomy policy_metrics_node`<br>+ `python3 analysis/generate_tables.py` |
+| **Table 4** | Exp. C: Runtime Shared Autonomy & Safety Interventions | [`shielded_autonomy/runtime_metrics_node.py`](shielded_autonomy/runtime_metrics_node.py), [`arbitration_node.py`](shielded_autonomy/arbitration_node.py), [`safety_monitor_node.py`](shielded_autonomy/safety_monitor_node.py) | `ros2 launch shielded_autonomy safe_dagger.launch.py`<br>+ `ros2 run shielded_autonomy runtime_metrics_node`<br>+ `python3 analysis/generate_tables.py` |
+| **Figure 1** | Architecture: Monitored loop & recovery-centric data pipeline | Documented in `safety_monitor_node.py`, `arbitration_node.py`, & `safe_dagger_recorder_node.py` | — |
+| **Figure 2** | Simulation Environments: Env A (Known) & Env B (Unknown) | [`worlds/experiment_b_world2.sdf`](worlds/experiment_b_world2.sdf), [`maps/`](maps/) | Included in `ros2 launch shielded_autonomy full_system.launch.py` |
+| **Trajectory Paths** | Waypoint and Executed Path Logging | [`shielded_autonomy/export_nav2_paths.py`](shielded_autonomy/export_nav2_paths.py) | `python3 shielded_autonomy/export_nav2_paths.py` |
 
 ---
 
-## System Architecture
+## 🛠️ System Architecture
+![Overview of the monitored policy–expert loop and the offline recovery-data pipeline](media/architecture_diagram.png)
 
-### 1. Behavioral Cloning Policy
-
-A PyTorch MLP policy trained on navigation demonstrations.
-
-**Input (40D observation vector):**
-
-- 36 LiDAR beams  
-- 2 odometry values  
-- 2 local goal coordinates  
-
-**Output:**
-
-- Linear velocity  
-- Angular velocity  
-
-The model is exported to **ONNX** for low-latency inference at **10 Hz**.
-
+1. **Learned Policy ($\pi_\theta$):** An MLP $[256, 128, 64]$ mapping a $40\text{D}$ observation (36 LiDAR beams, 2 odometry velocities, 2 local goal coordinates) to $[v, \omega]$. Executed at $10\text{ Hz}$ via ONNX Runtime.
+2. **Safety Monitor:** Runs at $10\text{ Hz}$, evaluating 4 conditions: footprint breach ($< 0.22\text{ m}$), reversing collision risk ($< 0.25\text{ m}$), inflation breach ($< 0.35\text{ m}$), and angular/linear command disagreements ($|\Delta\omega| > 0.8\text{ rad/s}, |\Delta v| > 0.15\text{ m/s}$).
+3. **Arbitrator:** Enforces a $3.0\text{ s}$ recovery cooldown timer ($T_{\text{rec}}$) and a $4.0\text{ s}$ deadlock detection watchdog ($T_{\text{deadlock}}$) with a $1.5\text{ s}$ unshielded shake-up window to avoid stagnation.
+4. **Data Recorder:** Pre-trigger FIFO buffer of $K=10$ steps ($1.0\text{ s}$) preceding intervention paired with corrective MPPI expert commands.
 ---
-
-### 2. Safety Monitor
-
-The safety monitor runs continuously and publishes a binary risk signal (`safe` / `unsafe`) based on four hierarchical trigger conditions.
-
-#### Trigger 1 — LiDAR Panic Check (Immediate Collision Risk)
-
-Emergency takeover is triggered if the robot is dangerously close to an obstacle in any direction.
-
-```python
-latest_scan < lidar_threshold
+## 💻 Installation & Dependencies
+### Prerequisites
+- **OS:** Ubuntu 22.04 LTS
+- **ROS 2:** [Humble Hawksbill](https://docs.ros.org/en/humble/Installation.html)
+- **Simulator:** Gazebo Classic 11
+- **Platform:** TurtleBot3 Waffle
+```bash
+# 1. Install ROS 2 navigation and TurtleBot3 packages
+sudo apt update
+sudo apt install -y \
+    ros-humble-navigation2 \
+    ros-humble-nav2-bringup \
+    ros-humble-turtlebot3 \
+    ros-humble-turtlebot3-gazebo \
+    ros-humble-turtlebot3-navigation2
+# 2. Install Python dependencies
+pip install -r requirements.txt
+```
+### Build Workspace
+```bash
+cd ~/nav2_ws/src
+git clone https://github.com/sunday-ikechukwu/shielded-autonomy.git
+cd ~/nav2_ws
+colcon build --symlink-install --packages-select shielded_autonomy
+source install/setup.bash
 ```
 
-This represents the highest-priority safety condition.
+## 🚀 Quickstart & Usage
+The evaluation workflow uses a multi-terminal setup:
+1. **Terminal 1:** Bring up the simulation world, map localization, Nav2 MPPI stack, and RViz.
+2. **Terminal 2:** Run the chosen policy, expert, or shared-autonomy arbitration stack.
+3. **Terminal 3:** Run the corresponding evaluation metrics logger.
+4. **Terminal 4:** Dispatch experimental scenario goals.
+---
+### Step 1: Launch Base Infrastructure (Simulation & Nav2 MPPI)
+In your first terminal, launch Gazebo Classic, the TurtleBot3 Waffle platform, AMCL localization, the Nav2 MPPI controller, and RViz:
+```bash
+export TURTLEBOT3_MODEL=waffle
+source ~/nav2_ws/install/setup.bash
+ros2 launch shielded_autonomy full_system.launch.py
+```
+>[!NOTE] (Wait ~12 seconds for the staged startup timers to complete and for RViz to initialize.)
 
 ---
+### Step 2: Choose Execution Mode (Experiments A, B, or C)
 
-#### Trigger 2 — Reverse Collision Check
+***Velocity Routing Note:**
+- In **Shared Autonomy Mode (Exp. C)**, the policy publishes to `/cmd_vel_bc` and MPPI publishes to `/cmd_vel_mppi`. The `arbitration_node` arbitrates between them and publishes the chosen velocity to `/cmd_vel`.
+- In **Standalone Policy Mode (Exp. A & B)**, you must remap `/cmd_vel_bc` to `/cmd_vel` so the policy directly commands the robot.
+- In **Standalone MPPI Mode (Exp. A & B)**, you configure Nav2 to publish directly to `/cmd_vel`.
 
-If the BC policy commands reverse motion, rear obstacle clearance is explicitly checked.
-
-```python
-bc_linear_velocity < -0.01 and rear_scan < rear_lidar_threshold
+#### Option A: Standalone Learned Policy (Experiments A & B)
+To evaluate the unmonitored policy under nominal conditions or zero-shot distribution shift:
+```bash
+source ~/nav2_ws/install/setup.bash
+# --- Terminal 2: Run Inference Policy (remap /cmd_vel_bc to /cmd_vel) ---
+# For Baseline Behavior Cloning (pi_0):
+ros2 run shielded_autonomy bc_inference_node --ros-args --remap /cmd_vel_bc:=/cmd_vel
+# OR for Final Retrained Policy (pi_2):
+ros2 run shielded_autonomy safe_dagger_inference_node --ros-args --remap /cmd_vel_bc:=/cmd_vel
+# --- Terminal 3: Record Standalone Benchmark Metrics ---
+ros2 run shielded_autonomy policy_metrics_node
 ```
 
-This prevents the policy from reversing into unseen obstacles.
-
----
-
-#### Trigger 3 — Inflation Boundary Breach (Early Warning)
-
-Takeover is triggered when the robot enters the inflated costmap safety margin, even before direct collision risk.
-
-```python
-latest_scan < warning_threshold
+#### Option B: Standalone MPPI Expert Reference (Experiments A & B)
+To run the classical Nav2 MPPI planner as the standalone benchmark:
+1. Open `launch/navigation2_bringup_custom.launch.py`.
+2. Under both `load_nodes` (lines 182–185) and `load_composable_nodes` (lines 243–246), uncomment the direct `/cmd_vel` mapping and `comment out` /cmd_vel_mppi:
+```bash
+# For Standalone MPPI:
+remappings=remappings + [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'cmd_vel')]
+# remappings=remappings + [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'cmd_vel_mppi')]
+```
+3. Re-build and source:
+```bash
+colcon build --symlink-install --packages-select shielded_autonomy
+source install/setup.bash
+```
+4. Start the policy metrics node in Terminal 3:
+```bash
+ros2 run shielded_autonomy policy_metrics_node
 ```
 
-This acts as a predictive safety buffer.
+#### Option C: Full Runtime Shared Autonomy Stack (Experiment C)
+To evaluate the combined system where the safety monitor arbitrates control between the policy and MPPI expert, while automatically recording DAgger recovery trajectories:
 
----
-
-#### Trigger 4 — Policy–Expert Disagreement
-
-The shield compares intended actions from:
-
-- Behavioral Cloning policy
-- MPPI expert planner
-
-Three disagreement modes are evaluated:
-
-##### Angular disagreement
-```python
-abs(mppi_w - bc_w) > delta_w_threshold
+>[!NOTE]
+>(Ensure `navigation2_bringup_custom.launch.py` has `cmd_vel_smoothed` mapped back to `cmd_vel_mppi`)
+```bash
+source ~/nav2_ws/install/setup.bash
+# --- Terminal 2: Launch Policy + Safety Monitor + Arbitrator + Recorder ---
+ros2 launch shielded_autonomy safe_dagger.launch.py
+# --- Terminal 3: Record Runtime Shared-Autonomy Metrics ---
+ros2 run shielded_autonomy runtime_metrics_node
 ```
 
-##### Linear velocity disagreement
-```python
-abs(mppi_v - bc_v) > delta_v_threshold
+### Step 3: Dispatch Experimental Scenarios
+Use `experiment/scenario_runner.py` to send deterministic start and goal poses:
+```bash
+source ~/nav2_ws/install/setup.bash
+# List all available scenarios:
+python3 experiment/scenario_runner.py --list --yaml experiment/experiment_A_scenarios.yaml
+# Run Scenario A1 (Known Environment - Exp. A or C):
+python3 experiment/scenario_runner.py A1 --yaml experiment/experiment_A_scenarios.yaml
+# Run Scenario B1 (Unseen Environment - Exp. B or C):
+python3 experiment/scenario_runner.py B1 --yaml experiment/experiment_B_scenarios.yaml
 ```
 
-##### Topological disagreement (opposite turning direction)
-```python
-sign(mppi_w) != sign(bc_w)
+### Step 4: Analysis, Figures, & Path Export
+Post-process recorded runs and generate the tables and figures from the paper:
+```bash
+# 1. Validate and consolidate recorded trial summaries:
+python3 analysis/validate_results.py
+python3 analysis/consolidate_results.py
+# 2. Generate paper figures and tables (Figures A1, B1, C1 & Tables 3, 4, A1, B1):
+python3 analysis/generate_figures.py
+python3 analysis/generate_tables.py
+# 3. Export executed Nav2 trajectory paths:
+python3 shielded_autonomy/export_nav2_paths.py
 ```
 
-This detects situations where both policies propose fundamentally different recovery strategies.
-
-Typical thresholds:
-
-- `Δv > 0.25 m/s`
-- `Δω > 1.0 rad/s`
-- Obstacle distance `≤ 0.28 m`
-
----
-
-### 3. Arbitrator State Machine
-
-Handles control transfer between:
-
-- **POLICY mode**
-- **EXPERT mode**
-
-The arbitrator ensures stable hand-offs and prevents oscillatory switching.
-
----
-
-### 4. Safe DAgger Data Pipeline
-
-During expert intervention:
-
-- Sensor streams are synchronized  
-- Recovery trajectories are recorded  
-- Data stored as `.hdf5`  
-- Recovery samples added to training set  
-- Policy retrained on failure cases  
-
-This allows the robot to improve precisely where it previously failed.
-
----
-
-# Key Engineering Challenges
-
-## 1. Arbitration Chattering (“Watchdog Starvation”)
-
-### Problem
-
-During tight turns and narrow corridor maneuvers, the system entered a loop:
-
-`Expert → Policy → Expert`
-
-The deadlock timer incorrectly interpreted temporary MPPI zero-velocity replanning as failure.
-
-### Solution
-
-Implemented a **continuous inactivity watchdog**.
-
-The timer now only advances when the expert is truly stationary:
-
-- `Δv ≈ 0`
-- `Δω ≈ 0`
-
-This eliminated arbitration chattering.
-
----
-
-## 2. Hardware Asynchrony & Dataset Corruption
-
-### Problem
-
-Running simultaneously:
-
-- Gazebo simulation  
-- MPPI planner  
-- ONNX inference  
-
-caused CPU bottlenecks.
-
-This produced “frozen frames” where:
-
-- Command velocity was high  
-- Actual odometry remained zero  
-
-Such samples polluted DAgger data.
-
-### Solution
-
-Built a **rolling-window deadlock filter** in Python/NumPy.
-
-The filter removes lag-induced corrupted samples by comparing:
-
-- commanded velocity  
-vs  
-- actual odometry  
-
-over a sliding time window.
-
-This significantly improved dataset quality.
-
----
-
-## 3. Overly Aggressive Safety Thresholds
-
-### Problem
-
-Initial thresholds caused unnecessary interventions even when the policy was safe but slower than MPPI.
-
-### Solution
-
-Performed empirical threshold tuning.
-
-Final thresholds reduced:
-
-- false positives  
-- unnecessary takeovers  
-- CPU overhead  
-
-The shield became an emergency fallback rather than an overactive supervisor.
-
----
-
-## 4. Global Planner Latency
-
-### Problem
-
-Low-frequency global planning caused outdated sub-goals.
-
-This created a “sliding carrot” effect where the local policy chased stale targets.
-
-### Solution
-
-Implemented **dynamic Pure Pursuit lookahead** using `tf2`.
-
-The robot continuously tracks a local sub-goal approximately **1.5 m ahead**, decoupling local control from global planning latency.
-
----
-
-## Tech Stack
-
-- Python  
-- ROS 2  
-- PyTorch  
-- ONNX Runtime  
-- Gazebo  
-- NumPy  
-- HDF5  
-- MPPI Planner  
-- Costmaps / tf2  
-
----
-
-## Future Work
-
-- Multi-modal policy architectures (CNN / Transformer)
-- Uncertainty-aware shield triggering
-- Reinforcement learning fine-tuning after DAgger
-- Adaptive threshold learning
-- Real-world deployment on physical mobile robot
-
----
-
-## Citation
-
+## 📊 Citation
+If you find this code or our paper useful in your research, please cite:
 ```bibtex
-@misc{ikechukwu2026shieldeddagger,
-  title={Shielded DAgger: A Deterministic Fallback Architecture for Safe Imitation Learning in Robotics},
-  author={Sunday Ikechukwu and B. A. Sawyerr},
-  year={2026},
-  note={Under Review}
+@inproceedings{ikechukwu2026shielded,
+  title     = {Navigating the Shielding Paradox: Runtime Shared Autonomy for Safe Learning-Based Mobile Robot Navigation},
+  author    = {Ikechukwu, Sunday},
+  booktitle = {Proceedings of the International Conference on Artificial Intelligence and Robotics (MIRG-ICAIR 2026)},
+  year      = {2026}
 }
 ```
